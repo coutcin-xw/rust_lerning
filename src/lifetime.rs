@@ -92,14 +92,14 @@ fn lifetime_in_functions() {
     // result的生命周期与string1、string2中较短的一致
 
     // 情况2：两个参数生命周期不同
-    let string1 = String::from("hello"); // ----------+-- 'a
-    let result; // --+       |
+    let string1 = String::from("hello");      // ----------+-- 'a
+    let result;                                 // --+       |
     {
-        //   |       |
+                                                      //   |       |
         let string2 = String::from("world!"); // --+-- 'b  |
-        result = longest(&string1, &string2); //   |       |
-        println!("result: {}", result); //   |       |
-    } // --+       |
+        result = longest(&string1, &string2);    //   |       |
+        println!("result: {}", result);               //   |       |
+    }                                                 // --+       |
       // println!("result: {}", result);         // 错误！string2已销毁
 
     // 【为什么第二段代码有限制？】
