@@ -7,6 +7,8 @@ mod error_handling;
 mod trait_generics;
 mod lifetime;
 mod concurrency;
+mod closures;
+mod iterators;
 
 fn main() {
     // 按顺序运行所有示例
@@ -19,6 +21,8 @@ fn main() {
     trait_generics::run();
     lifetime::run();
     concurrency::run();
+    closures::run();
+    iterators::run();
     
     println!("\n========== 全部示例完成! ==========");
 }

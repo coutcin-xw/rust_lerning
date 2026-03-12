@@ -84,7 +84,7 @@ fn read_config(path: &str) -> Result<String, io::Error> {
     let mut s = String::new();
     // ? 可以链式使用
     File::open(path)?.read_to_string(&mut s)?;
-    Ok(s)
+    return Ok(s);
 }
 
 // 【?的工作原理】
