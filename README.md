@@ -24,11 +24,15 @@
 | 09 | `closures.rs` | 闭包 | 闭包语法、捕获变量、Fn/FnMut/FnOnce | ⭐⭐⭐⭐ |
 | 10 | `iterators.rs` | 迭代器 | Iterator trait、适配器、消费者 | ⭐⭐⭐⭐ |
 
-### 第三阶段：并发编程
+### 第三阶段：高级特性
 
 | 序号 | 文件 | 主题 | 核心内容 | 重要程度 |
 |-----|------|------|---------|---------|
 | 11 | `concurrency.rs` | 并发编程 | 线程、消息传递、Mutex、Arc、Send/Sync | ⭐⭐⭐⭐ |
+| 12 | `smart_pointers.rs` | 智能指针 | Box, Rc, Arc, Cell, RefCell, Cow | ⭐⭐⭐⭐ |
+| 13 | `async_await.rs` | 异步编程 | async/await, Future, 运行时 | ⭐⭐⭐⭐⭐ |
+| 14 | `modules.rs` | 模块系统 | mod, pub, use, 路径, 可见性 | ⭐⭐⭐⭐ |
+| 15 | `macros.rs` | 宏 | 声明式宏、过程宏、内置宏 | ⭐⭐⭐ |
 
 ## 各章节详解
 
@@ -111,6 +115,41 @@
 - 原子引用计数 Arc
 - Send 和 Sync traits
 
+### 12_smart_pointers.rs - 智能指针
+- Box<T> 堆分配
+- Rc<T> 引用计数（单线程）
+- Arc<T> 原子引用计数（多线程）
+- Cell<T> 内部可变性（Copy类型）
+- RefCell<T> 内部可变性（运行时检查）
+- Deref 和 Drop traits
+- Cow<T> 写时克隆
+
+### 13_async_await.rs - 异步编程 ⭐
+- async/await 语法
+- Future trait
+- 异步运行时（tokio, async-std）
+- join! / select! 并发模式
+- 异步错误处理
+- 异步流 Stream
+- 异步网络编程
+
+### 14_modules.rs - 模块系统
+- 模块定义 mod
+- 可见性 pub / pub(crate) / pub(super)
+- use 导入和 as 别名
+- 路径：self / super / crate
+- 文件模块和目录模块
+- 重新导出 pub use
+- 项目结构最佳实践
+
+### 15_macros.rs - 宏
+- 声明式宏 macro_rules!
+- 宏参数类型（ident, expr, ty, tt...）
+- 重复模式 $(...),*
+- 卫生性（Hygiene）
+- 内置宏（vec!, println!, format!...）
+- 过程宏简介（派生、属性、函数式）
+
 ## 运行
 
 ```bash
@@ -136,6 +175,8 @@ cargo check
 | 引用 | C++引用 | 借用(&, &mut) |
 | 闭包 | lambda表达式 | `\|\| {}` |
 | 迭代器 | Iterator模式 | Iterator trait |
+| 异步 | Promise/Future | async/await + Future |
+| 宏 | 预处理器宏 | 卫生的宏系统 |
 
 ## 核心规则速查
 
@@ -162,6 +203,16 @@ cargo check
 - 返回引用通常需要标注生命周期
 ```
 
+### 智能指针选择
+```
+- 唯一所有权 -> Box<T>
+- 共享所有权（单线程） -> Rc<T>
+- 共享所有权（多线程） -> Arc<T>
+- 内部可变性（Copy） -> Cell<T>
+- 内部可变性（任意） -> RefCell<T>
+- 共享可变 -> Rc<RefCell<T>> / Arc<Mutex<T>>
+```
+
 ## 练习建议
 
 1. **阅读代码** - 理解每个示例的注释
@@ -170,20 +221,17 @@ cargo check
 4. **编写程序** - 实践完整的小项目
 5. **阅读文档** - [The Rust Book](https://doc.rust-lang.org/book/)
 
-## 进阶主题（待补充）
+## 进阶主题
 
 | 主题 | 说明 | 重要程度 |
 |------|------|---------|
-| 智能指针 | Box, Rc, Arc, Cell, RefCell, Cow | ⭐⭐⭐⭐ |
-| 异步编程 | async/await, Future, tokio | ⭐⭐⭐⭐⭐ |
-| 宏 | macro_rules!, 过程宏 | ⭐⭐⭐ |
-| unsafe Rust | 原始指针、unsafe块 | ⭐⭐⭐ |
-| 类型系统 | 新类型模式、类型别名、Never类型 | ⭐⭐⭐ |
 | 测试 | 单元测试、集成测试、文档测试 | ⭐⭐⭐⭐ |
-| 模块系统 | mod, pub, use, 路径 | ⭐⭐⭐⭐ |
-| 文档注释 | ///, //!, 文档生成 | ⭐⭐⭐ |
+| 标准库集合 | HashMap, HashSet, BTreeMap, VecDeque | ⭐⭐⭐⭐ |
+| 字符串处理 | String, &str, 格式化, 正则 | ⭐⭐⭐⭐ |
+| unsafe Rust | 原始指针、unsafe块 | ⭐⭐⭐ |
 | FFI | 与C交互, cbindgen | ⭐⭐ |
-| 标准库 | 集合、IO、时间、序列化 | ⭐⭐⭐⭐ |
+| Web开发 | actix-web, axum, warp | ⭐⭐⭐⭐ |
+| 嵌入式 | no_std, embedded-hal | ⭐⭐⭐ |
 
 ## 项目结构
 
@@ -192,18 +240,22 @@ rust_learning/
 ├── Cargo.toml
 ├── README.md
 └── src/
-    ├── main.rs          # 主入口
-    ├── basics.rs        # 基础语法
-    ├── ownership.rs     # 所有权
-    ├── borrowing.rs     # 借用和引用
-    ├── struct_enum.rs   # 结构体和枚举
-    ├── pattern_match.rs # 模式匹配
-    ├── error_handling.rs# 错误处理
-    ├── trait_generics.rs# Trait和泛型
-    ├── lifetime.rs      # 生命周期
-    ├── closures.rs      # 闭包
-    ├── iterators.rs     # 迭代器
-    └── concurrency.rs   # 并发编程
+    ├── main.rs           # 主入口
+    ├── basics.rs         # 基础语法
+    ├── ownership.rs      # 所有权
+    ├── borrowing.rs      # 借用和引用
+    ├── struct_enum.rs    # 结构体和枚举
+    ├── pattern_match.rs  # 模式匹配
+    ├── error_handling.rs # 错误处理
+    ├── trait_generics.rs # Trait和泛型
+    ├── lifetime.rs       # 生命周期
+    ├── closures.rs       # 闭包
+    ├── iterators.rs      # 迭代器
+    ├── concurrency.rs    # 并发编程
+    ├── smart_pointers.rs # 智能指针
+    ├── async_await.rs    # 异步编程
+    ├── modules.rs        # 模块系统
+    └── macros.rs         # 宏
 ```
 
 ## 参考资源
@@ -213,3 +265,4 @@ rust_learning/
 - [Rust标准库文档](https://doc.rust-lang.org/std/) - API参考
 - [Rustlings](https://github.com/rust-lang/rustlings) - 练习题
 - [Rust设计模式](https://rust-unofficial.github.io/patterns/) - 设计模式
+- [Tokio教程](https://tokio.rs/tokio/tutorial) - 异步运行时

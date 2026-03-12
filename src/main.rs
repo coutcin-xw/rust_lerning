@@ -9,6 +9,10 @@ mod lifetime;
 mod concurrency;
 mod closures;
 mod iterators;
+mod smart_pointers;
+mod async_await;
+mod modules;
+mod macros;
 
 fn main() {
     // 按顺序运行所有示例
@@ -23,6 +27,10 @@ fn main() {
     concurrency::run();
     closures::run();
     iterators::run();
+    smart_pointers::run();
+    async_await::run();
+    modules::run();
+    macros::run();
     
     println!("\n========== 全部示例完成! ==========");
 }
