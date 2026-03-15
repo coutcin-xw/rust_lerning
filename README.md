@@ -8,31 +8,31 @@
 
 | 序号 | 文件 | 主题 | 核心内容 | 重要程度 |
 |-----|------|------|---------|---------|
-| 01 | `basics.rs` | 基础语法 | 变量、数据类型、函数、控制流 | ⭐⭐⭐ |
-| 02 | `ownership.rs` | 所有权系统 | 所有权规则、移动、Copy、Drop | ⭐⭐⭐⭐⭐ |
-| 03 | `borrowing.rs` | 借用和引用 | 不可变引用、可变引用、切片、借用规则 | ⭐⭐⭐⭐⭐ |
-| 04 | `struct_enum.rs` | 结构体和枚举 | struct定义、方法、enum、Option<T> | ⭐⭐⭐⭐ |
-| 05 | `pattern_match.rs` | 模式匹配 | match、if let、解构、匹配守卫 | ⭐⭐⭐⭐ |
+| 01 | `01_basics.rs` | 基础语法 | 变量、数据类型、函数、控制流 | ⭐⭐⭐ |
+| 02 | `02_ownership.rs` | 所有权系统 | 所有权规则、移动、Copy、Drop | ⭐⭐⭐⭐⭐ |
+| 03 | `03_borrowing.rs` | 借用和引用 | 不可变引用、可变引用、切片、借用规则 | ⭐⭐⭐⭐⭐ |
+| 04 | `04_struct_enum.rs` | 结构体和枚举 | struct定义、方法、enum、Option<T> | ⭐⭐⭐⭐ |
+| 05 | `05_pattern_match.rs` | 模式匹配 | match、if let、解构、匹配守卫 | ⭐⭐⭐⭐ |
 
 ### 第二阶段：核心特性
 
 | 序号 | 文件 | 主题 | 核心内容 | 重要程度 |
 |-----|------|------|---------|---------|
-| 06 | `error_handling.rs` | 错误处理 | Result<T,E>、?操作符、自定义错误 | ⭐⭐⭐⭐ |
-| 07 | `trait_generics.rs` | Trait和泛型 | trait定义、实现、泛型、trait bound | ⭐⭐⭐⭐⭐ |
-| 08 | `lifetime.rs` | 生命周期 | 生命周期标注、省略规则、'static | ⭐⭐⭐⭐⭐ |
-| 09 | `closures.rs` | 闭包 | 闭包语法、捕获变量、Fn/FnMut/FnOnce | ⭐⭐⭐⭐ |
-| 10 | `iterators.rs` | 迭代器 | Iterator trait、适配器、消费者 | ⭐⭐⭐⭐ |
+| 06 | `06_error_handling.rs` | 错误处理 | Result<T,E>、?操作符、自定义错误 | ⭐⭐⭐⭐ |
+| 07 | `07_trait_generics.rs` | Trait和泛型 | trait定义、实现、泛型、trait bound | ⭐⭐⭐⭐⭐ |
+| 08 | `08_lifetime.rs` | 生命周期 | 生命周期标注、省略规则、'static | ⭐⭐⭐⭐⭐ |
+| 09 | `09_closures.rs` | 闭包 | 闭包语法、捕获变量、Fn/FnMut/FnOnce | ⭐⭐⭐⭐ |
+| 10 | `10_iterators.rs` | 迭代器 | Iterator trait、适配器、消费者 | ⭐⭐⭐⭐ |
 
 ### 第三阶段：高级特性
 
 | 序号 | 文件 | 主题 | 核心内容 | 重要程度 |
 |-----|------|------|---------|---------|
-| 11 | `concurrency.rs` | 并发编程 | 线程、消息传递、Mutex、Arc、Send/Sync | ⭐⭐⭐⭐ |
-| 12 | `smart_pointers.rs` | 智能指针 | Box, Rc, Arc, Cell, RefCell, Cow | ⭐⭐⭐⭐ |
-| 13 | `async_await.rs` | 异步编程 | async/await, Future, 运行时 | ⭐⭐⭐⭐⭐ |
-| 14 | `modules.rs` | 模块系统 | mod, pub, use, 路径, 可见性 | ⭐⭐⭐⭐ |
-| 15 | `macros.rs` | 宏 | 声明式宏、过程宏、内置宏 | ⭐⭐⭐ |
+| 11 | `11_concurrency.rs` | 并发编程 | 线程、消息传递、Mutex、Arc、Send/Sync | ⭐⭐⭐⭐ |
+| 12 | `12_smart_pointers.rs` | 智能指针 | Box, Rc, Arc, Cell, RefCell, Cow | ⭐⭐⭐⭐ |
+| 13 | `13_async_await.rs` | 异步编程 | async/await, Future, 运行时 | ⭐⭐⭐⭐⭐ |
+| 14 | `14_modules.rs` | 模块系统 | mod, pub, use, 路径, 可见性 | ⭐⭐⭐⭐ |
+| 15 | `15_macros.rs` | 宏 | 声明式宏、过程宏、内置宏 | ⭐⭐⭐ |
 
 ## 各章节详解
 
@@ -240,22 +240,26 @@ rust_learning/
 ├── Cargo.toml
 ├── README.md
 └── src/
-    ├── main.rs           # 主入口
-    ├── basics.rs         # 基础语法
-    ├── ownership.rs      # 所有权
-    ├── borrowing.rs      # 借用和引用
-    ├── struct_enum.rs    # 结构体和枚举
-    ├── pattern_match.rs  # 模式匹配
-    ├── error_handling.rs # 错误处理
-    ├── trait_generics.rs # Trait和泛型
-    ├── lifetime.rs       # 生命周期
-    ├── closures.rs       # 闭包
-    ├── iterators.rs      # 迭代器
-    ├── concurrency.rs    # 并发编程
-    ├── smart_pointers.rs # 智能指针
-    ├── async_await.rs    # 异步编程
-    ├── modules.rs        # 模块系统
-    └── macros.rs         # 宏
+    ├── main.rs              # 主入口
+    │
+    │── 核心模块（按序号学习）
+    ├── 01_basics.rs         # 基础语法
+    ├── 02_ownership.rs      # 所有权系统 ⭐核心
+    ├── 03_borrowing.rs      # 借用和引用 ⭐核心
+    ├── 04_struct_enum.rs    # 结构体和枚举
+    ├── 05_pattern_match.rs  # 模式匹配
+    ├── 06_error_handling.rs # 错误处理
+    ├── 07_trait_generics.rs # Trait和泛型 ⭐核心
+    ├── 08_lifetime.rs       # 生命周期 ⭐核心
+    ├── 09_concurrency.rs    # 并发编程
+    │
+    │── 进阶模块
+    ├── closures.rs          # 闭包
+    ├── iterators.rs         # 迭代器
+    ├── smart_pointers.rs    # 智能指针
+    ├── async_await.rs       # 异步编程
+    ├── modules.rs           # 模块系统
+    └── macros.rs            # 宏
 ```
 
 ## 参考资源
