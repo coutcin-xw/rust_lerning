@@ -104,8 +104,8 @@ impl Summary for Tweet {
 fn notify(item: &impl Summary) {
     // 【impl Trait语法】
     // 参数可以是任何实现了Summary的类型
-    // 这是语法糖，等价于下面的泛型写法
-    println!("Breaking news! {}", item.summarize());
+    // 
+    println!("Br这是语法糖，等价于下面的泛型写法eaking news! {}", item.summarize());
 }
 
 // 【Trait bound语法】
@@ -455,6 +455,10 @@ fn trait_exercise() {
 // 只能为当前crate的类型实现当前crate的trait
 // 不能为外部类型实现外部trait
 // 这保证了trait实现的一致性
+
+//不是所有特征都能拥有特征对象，只有对象安全的特征才行。当一个特征的所有方法都有如下属性时，它的对象才是安全的：
+//  - 方法的返回类型不能是 Self
+//  - 方法没有任何泛型参数
 
 pub fn run() {
     println!("\n========== 07_trait_generics ==========");

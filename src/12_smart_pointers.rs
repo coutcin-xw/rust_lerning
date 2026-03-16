@@ -88,7 +88,7 @@ fn box_demo() {
     let animals: Vec<Box<dyn Animal>> = vec![Box::new(Dog), Box::new(Cat)];
 
     for animal in animals.iter() {
-        println!("动物叫声: {}", animal.make_sound());
+        println!("动物叫声: {}", (**animal).make_sound());
     }
 
     // 【Box vs 普通引用】
