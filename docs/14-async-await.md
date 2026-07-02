@@ -209,12 +209,66 @@ async fn fetch_and_process(url: &str) -> Result<ProcessedData, Error> {
 
 > 💡 异步不是"更快"，而是能**更高效地处理大量并发 I/O**。单个异步任务并不比同步快——优势在于任务间切换无需线程上下文切换。
 
+## Pin / Unpin — 自引用类型的内存保证
+
+当你深入使用 async 时，会遇到 `Pin`。它的核心问题：**Future 可能在内存中被移动，但 Future 内部的自引用指针不能跟着更新。**
+
+### 问题场景
+
+```rust
+async fn demo() {
+    let s = String::from("hello");
+    let r = &s;  // 自引用：r 指向同一个 Future 中的 s
+    do_something(r).await;
+    // 如果 Future 在 .await 之间被移动了内存位置
+    // r 就变成了悬垂指针！
+}
+```
+
+### Pin 做了什么
+
+`Pin<Box<T>>` 或 `Pin<&mut T>` 保证被包装的值**不再被移动**：
+
+```rust
+use std::pin::Pin;
+
+// Box::pin 创建固定在堆上的 Future
+let future = Box::pin(async {
+    // 这个 Future 内部可以有自引用，因为它在堆上的位置固定了
+    let s = String::from("hello");
+    let r = &s;
+    do_something(r).await;
+});
+```
+
+### Unpin — "可以安全移动" 的标记
+
+大多数类型是 `Unpin`（自动实现），可以被安全移动。自引用类型不是 `Unpin`——这就是 `Pin` 发挥作用的地方。
+
+> 💡 **你不需要手动处理 `Pin` 来使用 async。** `tokio::spawn`、`Box::pin`、`#[tokio::main]` 已经帮你处理好了。这里介绍它是为了帮你理解——为什么有些 async 相关 API 签名中会看到 `Pin<Box<dyn Future>>`。
+
+```rust
+// tokio::spawn 内部帮你 Pin 了
+tokio::spawn(async { /* ... */ });  // ✅ 不用手动 Pin
+
+// 手动创建固定的 Future（罕见场景）
+let pinned_future = Box::pin(my_async_fn());
+
+// 用 poll 手动推进（只在实现自己的运行时时需要）
+use std::future::Future;
+use std::task::{Context, Poll};
+// pinned_future.as_mut().poll(cx);
+```
+
+理解即可：`Pin` 是 Rust 解决"自引用结构被移动"这一底层问题的方式，最终用户级别很少直接接触。
+
 ## 练习
 
 1. 用 tokio 写一个程序，并发请求两个 URL，汇总响应内容长度
 2. 用 `tokio::select!` 实现带超时的 HTTP 请求（如 3 秒未响应则放弃）
 3. 定义一个 `async fn` 的 trait（如 `Cache` 有 `async fn get(&self, key: &str) -> Option<String>`），为两个类型实现
 4. 理解 Future 的惰性：写一个 async 函数，创建 Future 但不 await，观察它是否执行
+5. 用 `Box::pin` 手动创建一个 Pinned Future，理解为什么 Pin 对自引用结构是必要的
 
 ---
 
