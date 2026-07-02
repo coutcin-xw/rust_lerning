@@ -2,188 +2,316 @@
 
 ## 学习目标
 
-- 理解引用（&）和借用（borrow）的概念
+- 理解引用（&）的语义——"借而不拥有"
 - 掌握不可变引用和可变引用的规则
-- 理解切片（slice）类型
-- 了解 NLL（Non-Lexical Lifetimes）的作用
+- 用 NLL 理解引用作用域的实际范围
+- 使用切片类型安全地操作集合的子集
+- 能解释为什么借用规则能防止数据竞争
 
-## 为什么要借用？
+## 上一章的问题
 
-上一章中，每次把 `String` 传入函数都会失去所有权，需要再返回出来才能继续使用。这很繁琐：
+回顾所有权规则：把 `String` 传给函数后，所有权就没了。
 
 ```rust
 fn calculate_length(s: String) -> (String, usize) {
     let len = s.len();
-    (s, len)  // 必须返回 s，否则调用者无法继续使用
+    (s, len)  // 必须把 String 还回去
 }
 
 let s = String::from("hello");
-let (s, len) = calculate_length(s);  // 麻烦！
+let (s, len) = calculate_length(s);  // 拿回来才能继续用
 ```
 
-**借用**解决了这个问题——你不需要拥有值，只需要暂时"借"来用一下。
+这太繁琐了。你需要一种"暂时使用但不拿走所有权"的方式——这就是**借用**。
 
-## 引用（Reference）
+## 引用——借用的实现
 
 ```rust
-fn calculate_length(s: &String) -> usize {  // & 表示引用
-    s.len()
-}  // s 离开作用域，但因为不拥有所有权，不会释放 String
+fn calculate_length(s: &String) -> usize {  // & 表示"借用"
+    s.len()           // 使用借来的 String
+}                     // s 离开作用域，但因为不拥有所有权，什么都不会释放
 
 let s = String::from("hello");
-let len = calculate_length(&s);  // &s 创建一个引用
+let len = calculate_length(&s);  // &s 创建一个指向 s 的引用
 println!("'{}' 的长度是 {}", s, len);  // s 仍然有效！
 ```
 
-`&` 创建引用，`*` 解引用。引用不会获取所有权，只是"借用"。
+发生的三件事：
+1. `&s` 创建了一个**引用**——指向 `s` 但不拥有它
+2. 函数通过引用使用 `s`，不获取所有权
+3. 函数结束时没有释放 `s`——它只是"还回了"借用
 
-> 💡 Rust 的引用类似 C++ 的引用，但有**编译期的安全规则**约束。	
+### 图解引用
 
-## 可变引用
+```
+let s = String::from("hello");    // s 拥有 String
+let r = &s;                       // r 是 s 的引用
 
-默认引用是不可变的。要修改值，需要 `&mut`：
+栈上：
+s ──→ [ptr][len][cap]    ← s 是所有者的绑定
+r ──→ [s 的地址]          ← r 是引用（实际上存的是 s 的栈地址）
 
-```rust
-fn change(s: &mut String) {
-    s.push_str(", world");
-}
-
-let mut s = String::from("hello");
-change(&mut s);
-println!("{}", s);  // "hello, world"
+堆上：
+[h][e][l][l][o]          ← 实际数据
 ```
 
-## 借用规则
+> 💡 引用本质上是**存了一个地址的变量**，类似 C/C++ 的指针，但有编译期安全检查：引用保证指向有效数据，永远不会是 null（除非用 `unsafe`）。
 
-这是 Rust 最重要的安全规则之一：
+## 不可变引用（&T）
+
+默认引用是**不可变**的——你只能读，不能改：
+
+```rust
+let s = String::from("hello");
+let r1 = &s;
+let r2 = &s;         // ✅ 可以有多个不可变引用
+println!("{}, {}", r1, r2);
+
+// r1.push_str("!"); // ❌ 不能通过不可变引用修改
+```
+
+## 可变引用（&mut T）
+
+要修改，需要 `&mut`：
+
+```rust
+fn append_world(s: &mut String) {
+    s.push_str(", world!");
+}
+
+let mut s = String::from("hello");  // s 本身必须是 mut
+append_world(&mut s);                // 创建可变引用
+println!("{}", s);                   // "hello, world!"
+```
+
+注意：`s` 必须是 `mut`——即使你打算通过引用修改，原变量也要声明为可变的。这保证你意识到谁可能修改它。
+
+## 借用规则——Rust 安全性的基石
 
 > **同一时刻，只能拥有以下两者之一：**
 > - 任意数量的不可变引用（`&T`）
 > - 恰好一个可变引用（`&mut T`）
 >
-> **引用必须始终有效**（不能有悬垂引用）
+> **且：引用必须始终有效**（不能指向已释放的内存）
+
+### 为什么需要这个规则？
+
+防止**数据竞争**——两个或多个指针同时访问同一数据，至少有一个在写，且没有同步机制：
+
+```rust
+let mut data = vec![1, 2, 3];
+
+// ❌ 数据竞争被编译器阻止：
+let r1 = &data;           // 不可变引用
+let r2 = &mut data;       // 编译错误！同时有不可变和可变引用
+// 如果允许，r1 可能读到被 r2 修改了一半的数据
+
+// ✅ 编译器保证：
+let r1 = &data;
+let r2 = &data;           // 多个不可变引用，没问题
+println!("{:?} {:?}", r1, r2);
+// r1, r2 最后一次使用后，可以创建可变引用
+let r3 = &mut data;       // ✅
+```
+
+### NLL（Non-Lexical Lifetimes）——编译器比你想象的聪明
+
+引用从声明开始，到**最后一次使用**结束（不是到作用域结束！）：
 
 ```rust
 let mut s = String::from("hello");
 
-// ✅ 多个不可变引用
-let r1 = &s;
-let r2 = &s;
-println!("{}, {}", r1, r2);
+let r1 = &s;              // r1 的引用在此开始
+let r2 = &s;              // r2 的引用在此开始
+println!("{} and {}", r1, r2);  // r1, r2 在这是最后一次使用
+// r1 和 r2 在此之后"不再存在"（按 NLL 规则）
 
-// ✅ 一个可变引用
-let r3 = &mut s;
-r3.push_str("!");
-
-// ❌ 同时有不可变和可变引用
-let r1 = &s;
-let r2 = &mut s;  // 编译错误！
+let r3 = &mut s;          // ✅ 没问题！r1, r2 已经"结束"了
+r3.push_str(" world");
 ```
 
-> 💡 这个规则防止了**数据竞争**（data race）——多个指针同时访问同一数据，且至少有一个在写。
+在 NLL 之前（Rust 1.0-1.30），引用要活到作用域结束，这段代码会报错。NLL 让借用检查更精确，减少了不必要的编译错误。
 
-### NLL（Non-Lexical Lifetimes）
+### 实际案例：遍历中修改
 
-Rust 编译器足够智能，**引用的作用域到它最后一次使用为止**，而不是到作用域结束：
+```rust
+let mut v = vec![1, 2, 3, 4, 5];
+
+// ❌ 错误：遍历持有不可变引用时不能修改
+// for item in &v {
+//     v.push(*item * 2);  // 编译错误
+// }
+
+// ✅ 正确：通过索引遍历（不持有引用）
+for i in 0..v.len() {
+    let val = v[i];  // 拷贝出值
+    v.push(val * 2); // 修改 v
+    if v.len() > 20 { break; }
+}
+```
+
+## 可变引用的限制：防止"别名可变"
 
 ```rust
 let mut s = String::from("hello");
 
-let r1 = &s;
-println!("{}", r1);  // r1 最后一次使用
-// r1 在这里就"结束"了
+let r1 = &mut s;
+// let r2 = &mut s;  // ❌ 编译错误：同时有两个可变引用
 
-let r2 = &mut s;  // ✅ OK！r1 已经不再使用
-r2.push_str(" world");
+r1.push_str("!");
+// r1 的最后一次使用
+
+let r2 = &mut s;     // ✅ r1 已经结束，可以创建新的可变引用
+r2.push_str("?");
 ```
 
-这意味着很多看似违反借用规则的情况实际上能通过编译。
+这个限制防止了一种经典的并发 bug——即使代码是单线程的。如果两个可变引用同时存在，修改可能互相覆盖，导致不可预测的结果。
 
-## 悬垂引用
-
-Rust 在编译期**阻止悬垂引用**：
+## 悬垂引用——Rust 阻止你犯错
 
 ```rust
-fn dangle() -> &String {
+fn dangle() -> &String {     // 返回引用
     let s = String::from("hello");
-    &s  // 编译错误：s 会在函数结束时被释放
-}
-// 返回的引用指向已经被释放的内存——危险！
+    &s                         // 引用 s
+}                              // s 被释放！
+// 返回的引用指向已经被释放的内存 → 悬垂引用
+// 编译器报错：missing lifetime specifier
 ```
 
-正确做法是返回所有权：
+正确做法：
 
 ```rust
-fn no_dangle() -> String {
+fn no_dangle() -> String {   // 返回所有权
     let s = String::from("hello");
-    s  // 所有权转移出去
+    s                           // 所有权转移给调用者
 }
 ```
 
-## 切片（Slice）
+## 切片（Slice）——对集合的引用
 
-切片是对集合中一部分元素的**引用**：
+切片是对集合中**连续一段元素**的引用：
+
+### 字符串切片 `&str`
 
 ```rust
 let s = String::from("hello world");
 
-// 字符串切片
 let hello = &s[0..5];   // "hello"
 let world = &s[6..11];  // "world"
-let all = &s[..];       // "hello world"
-
-// 数组切片
-let arr = [1, 2, 3, 4, 5];
-let slice = &arr[1..3];  // [2, 3]
 ```
 
-常用缩写：
+内存布局：
+```
+s ──→ [h][e][l][l][o][ ][w][o][r][l][d]  (String 在堆上)
+hello ──→ 指向 s 的索引 0，长度 5          (&str，存指针+长度)
+world ──→ 指向 s 的索引 6，长度 5          (&str，存指针+长度)
+```
 
-| 写法 | 等价于 |
-|------|--------|
-| `&s[0..5]` | 从开头到索引 5（不含） |
-| `&s[..5]` | 同上 |
-| `&s[6..]` | 从索引 6 到末尾 |
-| `&s[..]` | 整个字符串 |
+切片的缩写语法：
 
-> 💡 **技巧：** 在函数参数中使用 `&str` 而不是 `&String`，因为 `&str` 更通用——`&String` 会自动转换为 `&str`（deref coercion）。
+| 写法 | 等价于 | 含义 |
+|------|--------|------|
+| `&s[..5]` | `&s[0..5]` | 开头到索引 5（不含） |
+| `&s[6..]` | `&s[6..len]` | 索引 6 到末尾 |
+| `&s[..]` | `&s[0..len]` | 整个字符串 |
+
+### 数组切片 `&[T]`
 
 ```rust
-fn first_word(s: &str) -> &str {  // 用 &str，更灵活
+let arr = [1, 2, 3, 4, 5];
+let slice = &arr[1..4];  // [2, 3, 4]
+let all = &arr[..];      // [1, 2, 3, 4, 5]
+
+println!("第一个: {}", slice[0]);  // 2
+println!("长度: {}", slice.len()); // 3
+```
+
+### `&str` vs `&String` — 重要的设计选择
+
+在函数参数中，**优先使用 `&str` 而非 `&String`**：
+
+```rust
+// ❌ 不推荐：限制调用者必须传 &String
+fn greet_bad(s: &String) { println!("Hello, {}!", s); }
+
+// ✅ 推荐：更灵活
+fn greet_good(s: &str) { println!("Hello, {}!", s); }
+
+let owned = String::from("Alice");
+greet_good(&owned);       // &String → &str（自动转换，deref coercion）
+greet_good("Bob");        // 字符串字面量直接是 &str
+
+// greet_bad("Bob");      // 编译错误！需要 &String
+```
+
+这个转换是**自动的**——`String` 实现了 `Deref<Target=str>`，所以 `&String` 可以自动转换为 `&str`。这就是 Deref 强制转换（详见第 13 章）。
+
+### 一个实际的切片例子
+
+```rust
+fn first_word(s: &str) -> &str {
     let bytes = s.as_bytes();
     for (i, &item) in bytes.iter().enumerate() {
         if item == b' ' {
-            return &s[..i];
+            return &s[..i];  // 返回第一个空格之前的切片
         }
     }
-    &s[..]
+    &s[..]  // 没有空格：返回整个字符串的切片
 }
 
 let s = String::from("hello world");
-let word = first_word(&s);  // &String → &str 自动转换
-let word = first_word("hello world");  // 字符串字面量也可以
+let word = first_word(&s);
+println!("第一个单词: {}", word);  // "hello"
+// s 仍然可用——first_word 只是借用了 s
 ```
+
+## 借用规则总结
+
+```
+                        ┌──────────────────┐
+                        │   借用规则总结     │
+                        ├──────────────────┤
+                        │ &T  ：多个可共存  │
+                        │ &mut T：独占唯一  │
+                        │ 两者不能同时活跃  │
+                        │ 引用必须始终有效  │
+                        └──────────────────┘
+```
+
+这个规则的意义：**在编译期保证，访问共享数据时，要么多人读（安全），要么一个人写（独占）。**
 
 ## 跨语言对比
 
 | 概念 | Rust | C/C++ | Java/Python |
 |------|------|-------|-------------|
-| 引用 | `&T` / `&mut T`，编译期检查 | 原始指针 / `&`，无保护 | 所有对象都是引用 |
-| 数据竞争 | 编译错误 | 未定义行为 | 运行时保证 |
-| 切片 | `&[T]`，安全 | 指针+长度，不安全 | 无直接对应 |
-| 悬垂引用 | 编译错误 | 运行时崩溃/UB | 不会发生（有 GC） |
+| 引用/指针 | `&T` / `&mut T` | `T*` / `T&` | 所有对象变量 |
+| 空引用 | 不允许 | NULL/nullptr | null/None |
+| 数据竞争 | 编译错误 | 未定义行为 | 运行时处理 |
+| 切片 | `&[T]`，安全 | 指针+长度，危险 | 无内置对应 |
+| 悬垂引用 | 编译错误 | 运行时崩溃 | 不适用（GC） |
 
 ## 常见陷阱
 
-> ⚠️ **在还有不可变引用时尝试获取可变引用。** 记住 NLL 规则——不可变引用的生命周期结束于最后一次使用。如果你在 `println!` 之后再用 `&mut`，可能是 OK 的。
+> ⚠️ **在还有不可变引用时尝试获取可变引用。** NLL 规则下，只要不可变引用不再使用，编译器就允许。在 `println!` 之后创建 `&mut` 通常是 OK 的。
 
-> ⚠️ **返回局部变量的引用。** 编译器会直接报错。解决方案：返回所有权（`String` 而非 `&String`），或者让调用者传入引用。
+> ⚠️ **尝试返回局部变量的引用。** 编译器会报错。解决方式：返回所有权（`String`），或者接受一个引用参数并返回（像 `first_word` 那样）。
+
+> ⚠️ **可变引用只能有一个。** 当你需要"借用数组的不同部分"时，可以用 `split_at_mut`——它安全地创建两个互不重叠的可变切片。
+
+```rust
+let mut arr = [1, 2, 3, 4, 5];
+let (left, right) = arr.split_at_mut(3);
+// left: &mut [1, 2, 3]
+// right: &mut [4, 5]
+// 两个可变引用——但编译器知道它们不重叠，所以是安全的
+```
 
 ## 练习
 
-1. 写一个函数，接收 `&mut String` 并反转其中的字符（提示：`s.chars().rev().collect()`）
-2. 故意写出违反借用规则的代码，仔细阅读编译错误信息
-3. 写一个 `first_word` 函数返回第一个单词的切片
+1. 写一个函数，接收 `&mut String` 并反转其内容（提示：先 `s.chars().rev().collect()` 转为 String，再 `*s = ...`）
+2. 写 `first_word` 和 `last_word` 函数，返回 `&str` 切片。思考：为什么返回 `&str` 而不是 `String`？
+3. 尝试故意创建同时存在的可变引用和不可变引用，观察编译错误信息
+4. 用 `split_at_mut` 实现一个函数：接收 `&mut [i32]`，将前半部分所有元素乘以 2，后半部分所有元素加 1
 
 ---
 

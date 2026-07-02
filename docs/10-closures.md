@@ -2,202 +2,242 @@
 
 ## 学习目标
 
-- 掌握闭包的基本语法
-- 理解三种捕获方式：不可变借用、可变借用、获取所有权
-- 理解 Fn / FnMut / FnOnce 的区别
-- 学会将闭包作为参数和返回值
-- 了解 **async closures**（2024 Edition）
+- 掌握闭包的三种捕获方式
+- 理解 Fn / FnMut / FnOnce 的层次和选择
+- 将闭包作为函数参数和返回值
+- 使用 **async closures** 进行异步回调
+- 知道何时用闭包，何时用函数
 
-## 闭包语法
+## 什么是闭包？
 
-闭包是**可以捕获其环境中变量的匿名函数**：
-
-```rust
-// 基本语法：|参数| { 表达式 }
-let add = |a: i32, b: i32| -> i32 { a + b };
-
-// 大部分时候类型可以推断
-let add = |a, b| a + b;
-
-// 无参数
-let greet = || println!("Hello!");
-
-// 多行
-let complex = |x| {
-    let y = x + 1;
-    y * 2
-};
-
-let result = add(1, 2);  // 3
-```
-
-## 捕获环境变量
-
-闭包可以从定义它的作用域中捕获变量：
+闭包是**可以捕获其定义环境中变量的匿名函数**：
 
 ```rust
 let x = 10;
 let y = 20;
 
-// 不可变借用
-let print = || println!("x={}, y={}", x, y);
-print();
-// x 和 y 仍然可用
+// 闭包捕获了 x 和 y
+let print_sum = || println!("{} + {} = {}", x, y, x + y);
+print_sum();  // 10 + 20 = 30
+```
 
-// 可变借用
-let mut count = 0;
-let mut inc = || {
-    count += 1;
-    println!("count={}", count);
+vs 普通函数——函数不能捕获环境变量：
+
+```rust
+fn print_sum() {  // 无法访问外面的 x, y！
+    // println!("{}", x);  // 编译错误
+}
+```
+
+## 闭包语法
+
+```rust
+// 最简形式：类型从上下文推断
+let add = |a, b| a + b;
+
+// 显式类型标注
+let add: fn(i32, i32) -> i32 = |a, b| a + b;              // 函数指针
+let add = |a: i32, b: i32| -> i32 { a + b };              // 完整标注
+
+// 无参数
+let greet = || println!("Hello!");
+
+// 多行代码块
+let complex = |x: i32| {
+    let y = x * 2;
+    let z = y + 1;
+    z * z
 };
-inc();
-inc();
-// 注意：inc 释放后可再用 count
 
-// 获取所有权（move）
-let name = String::from("hello");
+let result = add(1, 2);     // 3
+let result = complex(5);    // 121
+```
+
+> 💡 闭包的类型由编译器为每个闭包单独生成（匿名类型）。即使两个闭包签名完全相同，它们的类型也不同——除非被强制转换为函数指针 `fn`。
+
+## 三种捕获方式
+
+闭包根据使用捕获变量的方式，自动选择最小权限的捕获方式：
+
+```rust
+let x = 10;
+let mut y = 20;
+let s = String::from("hello");
+
+// 不可变借用（&T）—— 只读
+let read_only = || println!("x={}", x);
+read_only();    // x 被不可变借用
+println!("{}", x);  // x 还能用
+
+// 可变借用（&mut T）—— 修改
+let mut modify = || {
+    y += 1;
+    println!("y={}", y);
+};
+modify();
+
+// 获取所有权（move）—— 消费
 let consume = move || {
-    println!("{}", name);  // name 所有权移入闭包
+    println!("{}", s);   // s 的所有权移入闭包
+    // s 在闭包结束时被 drop
 };
-// println!("{}", name);  // 编译错误！name 已移动
+// println!("{}", s);  // ❌ s 已移动
 consume();
 ```
 
-## Fn / FnMut / FnOnce
+## Fn / FnMut / FnOnce — 闭包的三种 trait
 
-闭包根据捕获方式自动实现以下一个或多个 trait：
+闭包自动实现以下 trait（取决于捕获方式）：
 
-| Trait | 捕获方式 | 调用方式 |
-|-------|---------|---------|
-| `FnOnce` | 获取所有权（可能消耗捕获的值） | 只能调用一次 |
-| `FnMut` | 可变借用 | 可多次调用，可能修改捕获值 |
-| `Fn` | 不可变借用 | 可多次调用，不修改捕获值 |
+```
+FnOnce  ←  FnMut  ←  Fn
+(调用1次) (可改)   (只读)
+```
 
-继承关系：`Fn: FnMut: FnOnce`（实现了 `Fn` 的也实现了另外两个）
+| Trait | 捕获方式 | 可调用次数 | 典型场景 |
+|-------|---------|-----------|---------|
+| `FnOnce` | 获取所有权 | 至少一次 | `drop(s)`、线程 spawn |
+| `FnMut` | 可变借用 | 多次 | `sort_by_key`、增量器 |
+| `Fn` | 不可变借用 | 多次 | `map`、`filter` |
 
 ```rust
-// FnOnce：消耗捕获的值
+// Fn：只读捕获
+let f: &dyn Fn() = &|| println!("read only");
+
+// FnMut：可变捕获
+let mut count = 0;
+let mut f = || { count += 1; count };  // 隐式 FnMut
+
+// FnOnce：消耗捕获
 let s = String::from("hello");
-let consume = || drop(s);  // s 被移入，闭包结束 s 就没了
-consume();  // 只能调用一次
-
-// FnMut：修改捕获的值
-let mut v = vec![1, 2, 3];
-let mut push = || v.push(4);  // 可变借用 v
-
-// Fn：只读
-let v = vec![1, 2, 3];
-let count = || v.len();  // 不可变借用 v
+let f = || drop(s);  // 隐式 FnOnce
 ```
 
 ## 闭包作为参数
 
-使用 `impl` trait 或泛型：
-
 ```rust
-// impl Trait 语法
-fn apply<F>(f: F) where F: FnOnce() {
-    f();
-}
-
-// 或者用 trait bound
-fn process<F: Fn(i32) -> i32>(data: i32, f: F) -> i32 {
-    f(data)
+// 泛型方式（静态分发，零开销）
+fn apply_twice<F>(f: F, x: i32) -> i32
+where
+    F: Fn(i32) -> i32,
+{
+    f(f(x))
 }
 
 let triple = |x| x * 3;
-let result = process(5, triple);  // 15
-```
+println!("{}", apply_twice(triple, 2));  // 2*3*3 = 18
 
-使用 `Box<dyn Fn>` 存储不同类型的闭包：
-
-```rust
-let operations: Vec<Box<dyn Fn(i32) -> i32>> = vec![
-    Box::new(|x| x + 1),
-    Box::new(|x| x * 2),
-    Box::new(|x| x * x),
-];
+// 动态分发
+fn apply_and_log(f: Box<dyn Fn(i32) -> i32>, x: i32) -> i32 {
+    let result = f(x);
+    println!("f({}) = {}", x, result);
+    result
+}
 ```
 
 ## 闭包作为返回值
 
 ```rust
 fn make_adder(x: i32) -> impl Fn(i32) -> i32 {
-    move |y| x + y  // move 是必须的，x 会离开作用域
+    move |y| x + y  // move 是必需的——x 在函数返回后就不存在了
 }
 
 let add5 = make_adder(5);
-println!("{}", add5(3));  // 8
+println!("5 + 3 = {}", add5(3));  // 8
+
+// 如果需要返回不同类型的闭包，用 Box<dyn Fn>
+fn make_closure(kind: &str) -> Box<dyn Fn(i32) -> i32> {
+    match kind {
+        "double" => Box::new(|x| x * 2),
+        "square" => Box::new(|x| x * x),
+        _        => Box::new(|x| x),
+    }
+}
 ```
 
 ## Async Closures（2024 Edition）
 
-> 📘 *Async closures 于 Rust 1.85.0 稳定，可以捕获环境变量并返回 Future：*
+> 📘 *Async closures 于 Rust 1.85.0 稳定，可以捕获环境并返回 Future：*
 
 ```rust
-// 基本语法
-let async_closure = async |x: i32| -> i32 {
-    // 异步操作...
-    x * 2
+// 捕获环境的异步闭包
+let factor = 2;
+let async_double = async |x: i32| -> i32 {
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    x * factor  // 捕获了 factor
 };
 
-// 使用时需要 .await
-let result = async_closure(5).await;
-
-// 作为参数
-async fn process<F>(f: F) -> i32
-where
-    F: AsyncFn(i32) -> i32,
-{
-    f(10).await
-}
+let result = async_double(5).await;  // 10
 ```
 
-Async closures 有对应的 trait：`AsyncFn`、`AsyncFnMut`、`AsyncFnOnce`（类比同步闭包的 Fn 系列）。
+对应的 trait：`AsyncFn`、`AsyncFnMut`、`AsyncFnOnce`（类比同步版本）。
 
 ## 闭包的实际应用
 
 ```rust
-// 迭代器操作
-let doubled: Vec<i32> = (1..5).map(|x| x * 2).collect();
+// 1. 迭代器组合
+let evens_squared: Vec<i32> = (1..=10)
+    .filter(|x| x % 2 == 0)
+    .map(|x| x * x)
+    .collect();
 
-// 自定义排序
-let mut words = vec!["rust", "is", "awesome"];
+// 2. 自定义排序
+let mut words = vec!["rust", "is", "awesome", "language"];
 words.sort_by_key(|w| w.len());
 
-// 惰性求值
-let expensive = |x| {
-    println!("computing...");
-    x * x
-};
+// 3. 捕获上下文
+let threshold = 5;
+let big_numbers: Vec<_> = numbers.iter()
+    .filter(|&&n| n > threshold)
+    .collect();
 
-// 回调模式
-fn on_event<F: Fn()>(callback: F) {
-    callback();
-}
+// 4. 惰性求值
+let expensive = |n: u64| {
+    println!("正在计算...");
+    (1..=n).sum::<u64>()
+};
+// 闭包不会立即执行，只在调用时执行
 ```
 
 ## 闭包性能
 
-没有捕获变量的闭包是**零大小类型**，可以通过函数指针传递：
+没有捕获变量的闭包是**零大小类型**（ZST），与函数指针性能相同：
 
 ```rust
-let f: fn(i32) -> i32 = |x| x + 1;  // 等同于函数指针
+let f: fn(i32) -> i32 = |x| x + 1;  // 可以强制为函数指针
+// 没有堆分配，没有虚表，和直接调用函数一样快
 ```
 
-捕获变量的闭包类似于编译器生成的匿名结构体，大小取决于捕获的内容。需要存储不同类型的闭包时，使用 `Box<dyn Fn(...)>`。
+捕获变量的闭包等效于编译器自动生成的结构体：
+- 每个捕获的变量是该结构体的字段
+- 调用闭包等于调用该结构体的方法
+- 编译器可以**内联**闭包调用（就像内联普通函数）
+
+## 闭包 vs 函数
+
+| | 闭包 | 函数 |
+|---|---|---|
+| 捕获环境 | ✅ | ❌ |
+| 类型 | 匿名类型 | 具名 `fn` 类型 |
+| 作为参数 | 泛型（每处生成一份代码） | 函数指针（统一类型） |
+| 适用场景 | 短小的内联逻辑 | 较大、需要复用的逻辑 |
+
+**选择建议：** 优先用函数。当函数需要访问上下文数据，且逻辑简短（1-10 行）时，用闭包。
 
 ## 常见陷阱
 
-> ⚠️ **闭包捕获引用后持有 Borrow。** 当闭包持有可变引用时，其他代码无法同时借用。这是借用规则的体现。
+> ⚠️ **闭包持有 `&mut` 时其他代码不能借用。** 如果闭包持有可变引用，在该闭包的生命周期内，原始变量不能被其他代码访问。
 
-> ⚠️ **返回闭包时忘记 `move`。** 如果闭包引用了函数内的局部变量，必须用 `move` 将所有权转移到闭包中，因为局部变量在函数返回后就不存在了。
+> ⚠️ **忘记 `move` 导致的生命周期错误。** 当闭包需要活得比捕获的引用更久时（如线程 spawn、返回闭包），必须用 `move`。
+
+> ⚠️ **闭包类型不兼容。** 即使两个闭包有相同签名，类型也不同。需要统一类型时用 `Box<dyn Fn>` 或函数指针。
 
 ## 练习
 
-1. 写一个函数，接收一个闭包和一个 `i32`，返回闭包执行 3 次的结果之和
-2. 实现一个缓存器 `Cacher`：用结构体存储闭包和结果，首次调用时计算，后续直接返回缓存值
-3. 用 async closure 写一个简单的异步回调处理
+1. 用 `sort_by_key` + 闭包对一个 `Vec<(String, u32)>` 按数字降序排列
+2. 实现 `Cacher<T>` 泛型结构体：存储一个闭包和计算结果，首次调用时计算，后续调用直接返回缓存值
+3. 写一个 `make_counter` 函数，返回一个每次调用递增并返回新值的闭包
+4. 尝试 async closure：写一个异步闭包，等待 100ms 后返回捕获的字符串的长度
 
 ---
 

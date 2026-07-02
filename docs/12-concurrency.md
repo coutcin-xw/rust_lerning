@@ -2,16 +2,17 @@
 
 ## 学习目标
 
-- 使用 `thread::spawn` 创建和管理线程
-- 通过 `mpsc::channel` 在线程间传递消息
-- 使用 `Mutex` 和 `Arc` 共享状态
+- 使用 `thread::spawn` 创建线程，`join` 等待完成
+- 通过 `mpsc::channel` 实现线程间消息传递
+- 使用 `Arc<Mutex<T>>` 安全共享状态
 - 理解 `Send` 和 `Sync` trait
+- 树立"消息传递优先于共享内存"的并发理念
 
-## Rust 的并发哲学
+## Rust 的并发——编译期保证安全
 
-Rust 以**无畏并发**（Fearless Concurrency）闻名。所有权和借用规则在编译期就能捕获大多数并发 bug（数据竞争、悬垂指针），让并发编程从"调试噩梦"变成"编译通过就跑对"。
+在大多数语言中，并发 bug（数据竞争、死锁）是运行时调试的噩梦。Rust 的类型系统和借用规则**在编译期就捕获了数据竞争**。
 
-> 不要通过共享内存来通信，要通过通信来共享内存。——Go 哲学，Rust 也拥抱这一理念。
+> "无畏并发"（Fearless Concurrency）不是说并发容易写，而是说——一旦编译通过，就没有隐晦的并发 bug。
 
 ## 创建线程
 
@@ -20,85 +21,95 @@ use std::thread;
 use std::time::Duration;
 
 let handle = thread::spawn(|| {
-    for i in 1..5 {
+    for i in 1..=5 {
         println!("子线程: {}", i);
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(Duration::from_millis(10));
     }
 });
 
-// 主线程继续运行
-for i in 1..3 {
+// 主线程继续执行
+for i in 1..=3 {
     println!("主线程: {}", i);
-    thread::sleep(Duration::from_millis(1));
+    thread::sleep(Duration::from_millis(10));
 }
 
-handle.join().unwrap();  // 等待子线程结束
+handle.join().unwrap();  // 阻塞等待子线程完成
 ```
 
-> ⚠️ 主线程结束时，所有子线程都会被强制终止，无论是否完成。务必 `join()` 等待。
+> ⚠️ 如果主线程结束，所有子线程被强制终止。**务必 join**。
 
-### move 闭包与线程
+### move 关键字——所有权转移进线程
 
 ```rust
-let v = vec![1, 2, 3];
+let data = vec![1, 2, 3, 4, 5];
 
 let handle = thread::spawn(move || {
-    println!("子线程: {:?}", v);  // v 的所有权移入线程
+    // data 的所有权移入此线程
+    println!("子线程: {:?}", data);
 });
 
-// println!("{:?}", v);  // 编译错误！v 已被移动
+// println!("{:?}", data);  // ❌ data 已移动
 ```
 
-`move` 是必需的——编译器无法确定线程是否比捕获的引用活得久。
+为什么必须 `move`？线程可能比创建它的作用域活得更久。如果闭包只借用了局部变量，当局部变量被释放时线程还在引用它——悬垂引用。`move` 强制闭包获取所有权，消除这种可能性。
 
-## 消息传递
+## 消息传递——mpsc::channel
 
-Rust 标准库提供了 **多生产者、单消费者**（mpsc）通道：
+Rust 标准库提供**多生产者、单消费者**（mpsc）通道：
 
 ```rust
 use std::sync::mpsc;
 use std::thread;
 
-let (tx, rx) = mpsc::channel();  // tx: 发送端, rx: 接收端
+let (tx, rx) = mpsc::channel();  // tx: 发送端(Sender), rx: 接收端(Receiver)
 
-// 发送线程
 thread::spawn(move || {
-    let messages = vec!["你好", "来自", "子线程"];
-    for msg in messages {
-        tx.send(msg).unwrap();
-        thread::sleep(Duration::from_millis(100));
-    }
+    tx.send("来自子线程的消息").unwrap();
+    tx.send("第二条消息").unwrap();
+    // tx 在此离开作用域 → 通道关闭
 });
 
-// 接收：rx 作为迭代器
-for received in rx {
-    println!("收到: {}", received);
+// rx 作为迭代器——自动在通道关闭时结束
+for msg in rx {
+    println!("收到: {}", msg);
 }
-// 当所有 tx 被 drop 时，迭代自动结束
+// 输出：
+// 收到: 来自子线程的消息
+// 收到: 第二条消息
 ```
 
 ### 多个生产者
 
 ```rust
 let (tx, rx) = mpsc::channel();
-let tx2 = tx.clone();  // clone 发送端
+let tx2 = tx.clone();  // 克隆发送端
 
 thread::spawn(move || {
-    tx.send("来自线程1").unwrap();
+    for i in 1..=3 {
+        tx.send(format!("线程1-消息{}", i)).unwrap();
+    }
 });
 
 thread::spawn(move || {
-    tx2.send("来自线程2").unwrap();
+    for i in 1..=3 {
+        tx2.send(format!("线程2-消息{}", i)).unwrap();
+    }
 });
+
+// 注意：原始的 tx 也还在！需要 drop 它让通道在合适时关闭
+drop(tx);
 
 for msg in rx {
     println!("{}", msg);
 }
+// 两个线程共发送 6 条消息
 ```
 
-## 共享状态
+> 💡 `mpsc` = Multiple Producer, Single Consumer。只有一个接收端，但有多个发送端（通过 `clone`）。
 
-### Mutex — 互斥锁
+## 共享状态——Mutex + Arc
+
+### Mutex\<T\> — 互斥锁
 
 ```rust
 use std::sync::Mutex;
@@ -106,16 +117,16 @@ use std::sync::Mutex;
 let m = Mutex::new(5);
 
 {
-    let mut num = m.lock().unwrap();
-    *num = 10;
-}  // 离开作用域，锁自动释放（RAII）
+    let mut num = m.lock().unwrap();   // 获取锁
+    *num += 1;
+}  // MutexGuard 离开作用域 → 自动释放锁（RAII）
 ```
 
-> 💡 `lock()` 返回 `LockResult<MutexGuard<T>>`。`MutexGuard` 实现了 `Deref + Drop`，离开作用域时自动释放锁。
+> ⚠️ `lock()` 返回 `LockResult<MutexGuard<T>>`。`unwrap()` 只在**另一个线程 panic 导致锁中毒**时失败——这种情况很少。
 
-### Arc — 多线程引用计数
+### 多线程共享——Arc\<Mutex\<T\>\>
 
-`Rc<T>` 不是线程安全的（非 `Send`）。在线程间共享数据需要 `Arc<T>`（原子引用计数）：
+`Mutex` 本身不能在线程间共享（所有权问题）。`Rc` 可以共享所有权但不线程安全。解决方案：`Arc<Mutex<T>>`。
 
 ```rust
 use std::sync::{Arc, Mutex};
@@ -125,64 +136,80 @@ let counter = Arc::new(Mutex::new(0));
 let mut handles = vec![];
 
 for _ in 0..10 {
-    let counter = Arc::clone(&counter);  // clone Arc（轻量，只增加计数）
-    let handle = thread::spawn(move || {
+    let counter = Arc::clone(&counter);  // clone Arc（只增加引用计数）
+    handles.push(thread::spawn(move || {
         let mut num = counter.lock().unwrap();
         *num += 1;
-    });
-    handles.push(handle);
+    }));
 }
 
 for handle in handles {
     handle.join().unwrap();
 }
 
-println!("结果: {}", *counter.lock().unwrap());  // 10
+println!("最终计数: {}", *counter.lock().unwrap());  // 10
 ```
 
-## Send 和 Sync
+### 死锁示例（注意避免）
 
-这两个 trait 是 Rust 并发安全的基础（都是自动实现的）：
+```rust
+// ❌ 死锁风险：两个锁的获取顺序相反
+let lock1 = Arc::new(Mutex::new(0));
+let lock2 = Arc::new(Mutex::new(0));
 
-| Trait | 含义 |
-|-------|------|
-| `Send` | 类型的所有权可以在线程间转移（几乎所有类型都是 `Send`） |
-| `Sync` | 类型的引用可以在线程间共享（`&T` 是 `Send`） |
+// 线程 A：先 lock1 后 lock2
+// 线程 B：先 lock2 后 lock1
+// 如果交错执行 → 死锁
+```
 
-`Rc<T>` 不是 `Send`（内部使用非原子计数），`RefCell<T>` 不是 `Sync`（运行时借用检查非线程安全）。
+防范死锁：**始终按相同顺序获取锁**；尽量缩小锁的持有范围。
 
-## 同步原语速查
+## Send 和 Sync Trait
 
-| 类型 | 用途 |
-|------|------|
-| `Mutex<T>` | 互斥锁，一次一个线程访问 |
-| `RwLock<T>` | 读写锁，多读单写 |
-| `Barrier` | 等待所有线程到达同一点 |
-| `Condvar` | 条件变量，配合 Mutex 使用 |
-| `Atomic*` | 原子类型（`AtomicBool`, `AtomicUsize` 等） |
+这两个 trait 是 Rust 并发安全的基础——编译器自动为类型实现：
 
-## 并发最佳实践
+| Trait | 含义 | 反例 |
+|-------|------|------|
+| `Send` | 类型的**所有权**可以安全地转移到其他线程 | `Rc<T>`（非原子引用计数） |
+| `Sync` | 类型的**共享引用**可以安全地在线程间传递 | `RefCell<T>`（运行时借用检查） |
 
-> ⚠️ **优先使用消息传递而非共享内存。** 通道让数据流向更清晰，减少死锁风险。
+```rust
+// 大部分类型是 Send + Sync
+fn is_send_sync<T: Send + Sync>() {}
 
-> ⚠️ **Mutex 内的数据尽量简单。** 锁的粒度越细、持有时间越短，并发性能越好。
+is_send_sync::<i32>();       // ✅
+is_send_sync::<String>();    // ✅
+// is_send_sync::<Rc<i32>>();   // ❌ Rc 不是 Send
+// is_send_sync::<RefCell<i32>>();  // ❌ RefCell 不是 Sync
+```
 
-> ⚠️ **避免在持有锁时进行阻塞操作。** 这是死锁的常见原因。
+## 其他同步原语
 
-## 跨语言对比
+| 类型 | 用途 | 使用场景 |
+|------|------|---------|
+| `RwLock<T>` | 读写锁：多读单写 | 读多写少的场景 |
+| `Barrier` | 所有线程到达同一点才继续 | 分阶段并行计算 |
+| `Condvar` | 条件变量：等待某条件成立 | 生产者-消费者复杂场景 |
+| `OnceLock<T>` | 只初始化一次的值 | 全局延迟初始化的配置 |
+| `Atomic*` | 无锁原子操作 | 简单计数器、状态标志 |
 
-| 概念 | Rust | Go | Java | C++ |
-|------|------|----|------|-----|
-| 线程 | `thread::spawn` | goroutine | `Thread` | `std::thread` |
-| 消息 | `mpsc::channel` | channel | `BlockingQueue` | 无标准库支持 |
-| 互斥锁 | `Mutex<T>` | `sync.Mutex` | `synchronized` | `std::mutex` |
-| 数据竞争 | 编译错误 ✅ | 运行时检测 | 运行时 | 未定义行为 ❌ |
+## 并发模式选择指南
+
+```
+需要并行计算独立任务？      → thread::spawn + join
+需要线程间通信？            → mpsc::channel（消息传递）
+需要多个线程读写共享数据？   → Arc<Mutex<T>> 或 Arc<RwLock<T>>
+只需要简单计数？            → AtomicU32 等（无锁，最快）
+多读少写？                  → Arc<RwLock<T>>
+分阶段并行（所有人到齐再继续）→ Barrier
+```
 
 ## 练习
 
-1. 创建 5 个线程，每个线程计算一个区间的素数，最后汇总结果
-2. 用 mpsc channel 实现一个生产者-消费者模式
-3. 用 `Arc<Mutex<Vec<T>>>` 实现一个线程安全的日志收集器
+1. 创建 N 个线程，每个线程计算一个区间的素数个数，最后汇总
+2. 用 mpsc channel 实现生产者-消费者：一个线程生成随机数，另一个线程接收并求和打印
+3. 用 `Arc<Mutex<Vec<T>>>` 实现一个线程安全的日志记录器
+4. 阅读 `std::sync::atomic` 文档，用 `AtomicUsize` 实现无锁计数器
 
 ---
 

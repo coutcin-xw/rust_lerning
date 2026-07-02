@@ -1,159 +1,162 @@
 # 附录 C：速查表
 
-## 所有权与借用
+## 所有权规则
 
-| 规则 | 说明 |
+| 规则 | 代码示例 |
+|------|---------|
+| 值有唯一所有者 | `let s = String::from("hi");` — s 是所有者 |
+| Move 后原变量失效 | `let s2 = s1;` — s1 不可再用 |
+| Copy 类型复制 | `let y = x;` — x, y 都可用（`i32`, `f64`, `bool`, `char` 等） |
+| 离开作用域自动 drop | `}` — 自动调用 `drop()` |
+| Clone 显式深拷贝 | `let s2 = s1.clone();` |
+
+## 借用规则
+
+| 规则 | 代码 |
 |------|------|
-| 每个值有唯一所有者 | `let s = String::from("hi")` — `s` 是所有者 |
-| 离开作用域自动释放 | `}` — 自动调用 `drop()` |
-| Move 语义 | `let s2 = s1` — `s1` 失效（除 `Copy` 类型） |
-| 不可变引用 `&T` | 可以有多个 |
-| 可变引用 `&mut T` | 同时只能有一个 |
-| 同作用域内不可混用 | 不可变引用和可变引用不能同时活跃 |
+| `&T` 多个共存 | `let r1 = &s; let r2 = &s;` ✅ |
+| `&mut T` 独占 | `let r = &mut s;` 同时只能有一个 |
+| 不能同时有 `&T` 和 `&mut T` | `let r1 = &s; let r2 = &mut s;` ❌ |
+| NLL：引用用到最后一行为止 | 之后可以创建新引用 |
+| 切片 `&[T]` `&str` | `&s[..5]`, `&arr[1..3]` |
 
 ## 常用 Trait
 
-| Trait | 作用 | 自动实现？ |
-|-------|------|----------|
-| `Copy` | 赋值时复制而不断交 | 简单栈类型 |
-| `Clone` | 显式深拷贝 | 需手动实现 |
-| `Drop` | 离开作用域时自动清理 | 需手动实现 |
-| `Deref` | 解引用 `*` 操作 | 需手动实现 |
-| `Debug` | `{:?}` 调试格式化 | 可用 `#[derive(Debug)]` |
-| `Display` | `{}` 用户友好格式化 | 需手动实现 |
-| `PartialEq` | `==` 和 `!=` | 可用 `#[derive(PartialEq)]` |
-| `PartialOrd` | `<` `>` 等比较 | 可用 `#[derive(PartialOrd)]` |
-| `Send` | 可在线程间转移 | 大多数类型自动 |
-| `Sync` | 可在多线程间共享引用 | 大多数类型自动 |
-| `Default` | 默认值 | 可用 `#[derive(Default)]` |
-| `From` / `Into` | 类型转换 | 需手动实现 |
-| `Iterator` | 迭代器 | 需手动实现 `next()` |
+| Trait | 作用 | derive? |
+|-------|------|---------|
+| `Debug` | `{:?}` 调试输出 | ✅ `#[derive(Debug)]` |
+| `Display` | `{}` 用户输出 | ❌ 手动 |
+| `Clone` | `.clone()` 深拷贝 | ✅ |
+| `Copy` | 赋值时复制 | ✅ (仅栈类型) |
+| `PartialEq` | `==` `!=` | ✅ |
+| `Eq` | 等价关系 | ✅ |
+| `PartialOrd` | `<` `>` `<=` | ✅ |
+| `Ord` | 全序 | ✅ |
+| `Default` | `Default::default()` | ✅ |
+| `Hash` | 可哈希 | ✅ |
+| `Drop` | 离开作用域清理 | ❌ 手动 |
+| `Deref` | `*` 解引用 | ❌ 手动 |
+| `From` / `Into` | 类型转换 | ❌ 手动 |
+| `Iterator` | `.next()` → 获得所有方法 | ❌ 手动 |
 
 ## 智能指针选择
 
 ```
-唯一所有权 + 堆分配         → Box<T>
-共享所有权（单线程）        → Rc<T>
-共享所有权（多线程）        → Arc<T>
-内部可变（Copy 类型）      → Cell<T>
-内部可变（任意类型、单线程）→ RefCell<T>
-共享 + 内部可变（单线程）   → Rc<RefCell<T>>
-共享 + 内部可变（多线程）   → Arc<Mutex<T>>
-读写锁                     → Arc<RwLock<T>>
-惰性/复用（借 or 拥有）     → Cow<T>
+需要堆分配                              → Box<T>
+共享所有权（单线程）                     → Rc<T>
+共享所有权（多线程）                     → Arc<T>
+内部可变（Copy 类型）                    → Cell<T>
+内部可变（任意类型，单线程）             → RefCell<T>
+共享 + 修改（单线程）                    → Rc<RefCell<T>>
+共享 + 修改（多线程）                    → Arc<Mutex<T>>
+读多写少                                → Arc<RwLock<T>>
+惰性分配 / 借用或拥有                    → Cow<T>
 ```
 
-## ? 操作符链
-
-```
-fn read_config() -> Result<Config, Error> {
-    let content = std::fs::read_to_string("config.toml")?;   // io::Error → Error
-    let config: Config = toml::from_str(&content)?;           // toml::Error → Error
-    Ok(config)
-}
-```
-
-## 常见派生宏
+## 迭代器速查
 
 ```rust
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct MyType { /* ... */ }
+// 适配器（惰性）
+iter.map(|x| ...)        // 映射         iter.take(n)      // 前 n 个
+iter.filter(|x| ...)     // 过滤         iter.skip(n)      // 跳过 n 个
+iter.filter_map(|x| ...) // 滤+转        iter.enumerate()  // 带索引
+iter.flatten()           // 展平         iter.chain(b)     // 连接
+iter.flat_map(|x| ...)   // 映射+展平    iter.zip(b)       // 配对
+
+// 消费者（触发计算）
+iter.collect::<Vec<_>>() // 收集到 Vec   iter.sum::<i32>() // 求和
+iter.fold(init, |a,x|)   // 折叠         iter.any(|x| ...) // 存在?
+iter.reduce(|a,x|)       // 无初值折叠   iter.all(|x| ...) // 全满足?
+iter.count()             // 计数         iter.find(|x| ...) // 查找
+iter.for_each(|x| ...)   // 每个执行     iter.max()        // 最大
+```
+
+## 错误处理速查
+
+```rust
+// 传播（推荐）                → let x = fallible()?;
+// 快速获取（原型）             → let x = fallible().unwrap();
+// 带消息的快速获取             → let x = fallible().expect("原因");
+// 默认值                      → let x = fallible().unwrap_or(default);
+// 惰性默认值                  → let x = fallible().unwrap_or_else(|| compute());
+// 匹配处理                    → match fallible() { Ok(x) => ..., Err(e) => ... }
+// panic                      → panic!("消息");
+// debug 断言                  → debug_assert!(condition);
 ```
 
 ## 生命周期省略规则
 
-| 规则 | 说明 |
-|------|------|
-| 规则 1 | 每个引用参数都有自己的生命周期参数 |
-| 规则 2 | 只有 1 个输入生命周期 → 赋给所有输出 |
-| 规则 3 | 有 `&self` → `self` 的生命周期赋给所有输出 |
+```
+1. 每个引用参数各有自己的生命周期
+2. 只有 1 个输入 → 赋给所有输出
+3. 有 &self → self 的生命周期赋给所有输出
+```
 
 ## 闭包 Trait 层次
 
 ```
-FnOnce ← FnMut ← Fn
- (一次)  (可改)  (只读)
-```
-
-## 常用迭代器模式
-
-```rust
-// 转换
-iter.map(|x| x * 2)                 // 映射
-iter.filter(|x| x > 0)              // 过滤
-iter.filter_map(|x| x.parse().ok()) // 过滤+转换
-iter.take(5)                        // 取前 5 个
-iter.skip(3)                        // 跳过前 3 个
-iter.flatten()                      // 展平
-
-// 收集
-iter.collect::<Vec<_>>()            // 收集到 Vec
-iter.collect::<HashMap<_, _>>()     // 收集到 HashMap
-iter.fold(0, |acc, x| acc + x)     // 折叠
-iter.sum::<i32>()                   // 求和
-iter.any(|x| x > 0)                // 是否存在
-iter.all(|x| x > 0)                // 全部满足
-iter.find(|x| x > 0)               // 查找
-iter.count()                        // 计数
-```
-
-## 错误处理模式
-
-```rust
-// 传播错误（推荐）
-fn f() -> Result<T, E> { let x = g()?; Ok(x) }
-
-// 直接获取（原型/测试）
-let x = g().unwrap();
-
-// 带消息的直接获取
-let x = g().expect("g 不应该失败");
-
-// 提供默认值
-let x = g().unwrap_or(default);
-
-// match 处理
-match g() {
-    Ok(x) => use(x),
-    Err(e) => handle(e),
-}
-```
-
-## 2024 Edition 关键语法
-
-```rust
-// let chains（2024 Edition 独占，1.88.0 稳定）
-if let Some(x) = opt1 && let Some(y) = opt2 { }
-
-// unsafe extern（2024 强制）
-unsafe extern "C" { fn sqrt(x: f64) -> f64; }
-
-// unsafe 属性（2024 强制）
-#[unsafe(no_mangle)]
-pub extern "C" fn callback() { }
-
-// Future/IntoFuture 已入 prelude（无需 import）
-async fn foo() -> impl Future<Output = i32> { 42 }
-
-// RPIT 自动捕获所有生命周期（2024 默认行为）
-fn bar<'a>(x: &'a str) -> impl Display + use<'a> { x }
+        FnOnce (调用 ≥ 1 次，可能消耗捕获值)
+          ↑
+        FnMut (可调用多次，可变借用)
+          ↑
+        Fn    (可调用多次，不可变借用)
 ```
 
 ## Cargo 常用命令
 
 ```bash
-cargo new <name>         # 创建新项目
-cargo build              # 编译
-cargo run                # 编译+运行
-cargo check              # 快速检查（推荐开发时用）
-cargo test               # 运行测试
-cargo fmt                # 格式化代码
-cargo clippy             # 运行 linter
-cargo doc --open         # 生成并打开文档
-cargo add <crate>        # 添加依赖（需 cargo-edit）
-cargo update             # 更新依赖
-cargo clean              # 清除编译缓存
-cargo build --release    # 发布构建
+cargo new <name>           # 创建项目
+cargo build                # 编译 (debug)
+cargo build --release      # 编译 (release)
+cargo run                  # 编译 + 运行
+cargo check                # 快速检查（推荐开发时）
+cargo test                 # 运行测试
+cargo test <name>          # 运行匹配的测试
+cargo fmt                  # 格式化
+cargo clippy               # lint
+cargo doc --open           # 生成 + 打开文档
+cargo add <crate>          # 添加依赖
+cargo update               # 更新依赖
+cargo clean                # 清理 target/
+```
+
+## Rust 2024 Edition 新语法速查
+
+```rust
+// let chains (2024 Edition 独占, Rust ≥ 1.88.0)
+if let Some(a) = opt1 && let Some(b) = opt2 && condition {
+    // 使用 a, b
+}
+
+// unsafe extern (2024 Edition 必写)
+unsafe extern "C" {
+    fn sqrt(x: f64) -> f64;
+}
+
+// unsafe 属性 (2024 Edition 必写)
+#[unsafe(no_mangle)]
+pub extern "C" fn my_func() { }
+
+// unsafe fn 内部显式 unsafe 块 (2024 默认 warn)
+unsafe fn process(ptr: *const u8) {
+    unsafe { println!("{}", *ptr); }
+}
+
+// RPIT 自动捕获生命周期 (2024 默认行为)
+fn foo(x: &str) -> impl Display { x }
+
+// 精确控制: use<..>
+fn bar<T>(x: &T) -> impl Display + use<T> { ... }
+
+// Future/IntoFuture 入 prelude (无需 import)
+async fn demo() { }
+
+// async closures
+let f = async |x: i32| -> i32 { x * 2 };
+
+// 禁止 static mut 引用 (改用 &raw mut)
+static mut COUNTER: u32 = 0;
+let ptr = &raw mut COUNTER;  // 不是 &COUNTER
 ```
 
 ---
