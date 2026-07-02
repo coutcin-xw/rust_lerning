@@ -1,4 +1,4 @@
-# 第 18 章：测试
+# 第 19 章：测试
 
 ## 学习目标
 
@@ -174,4 +174,4 @@ cargo test --doc  # 只运行文档测试
 
 ---
 
-← [第 17 章：标准库集合](./17-collections.md) | [返回目录](./README.md) | → [第 19 章：unsafe Rust 与 FFI](./19-unsafe-ffi.md)
+← [第 18 章：标准库集合](./18-collections.md) | [返回目录](./README.md) | → [第 20 章：unsafe Rust 与 FFI](./20-unsafe-ffi.md)

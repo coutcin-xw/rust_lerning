@@ -60,16 +60,17 @@
 | [第 12 章：并发编程](./12-concurrency.md) | 线程、消息传递、Mutex、Arc、Send/Sync | ⭐⭐⭐⭐ |
 | [第 13 章：智能指针](./13-smart-pointers.md) | Box/Rc/Arc/Cell/RefCell/Deref/Drop | ⭐⭐⭐⭐ |
 | [第 14 章：异步编程](./14-async-await.md) | async/await、Future trait、async fn in traits | ⭐⭐⭐⭐⭐ |
-| [第 15 章：模块系统](./15-modules.md) | mod、pub、use、项目结构 | ⭐⭐⭐⭐ |
-| [第 16 章：宏](./16-macros.md) | 声明式宏、过程宏简介 | ⭐⭐⭐ |
+| [第 15 章：模块系统](./15-modules.md) | mod、pub、use、package/crate/module 概念 | ⭐⭐⭐⭐ |
+| [第 16 章：项目工程化](./16-project-engineering.md) | 条件编译、feature、workspace、属性、文档 | ⭐⭐⭐⭐ |
+| [第 17 章：宏](./17-macros.md) | 声明式宏、过程宏简介 | ⭐⭐⭐ |
 
 ### 第四阶段：实战补充
 
 | 章节 | 内容 | 重要度 |
 |------|------|--------|
-| [第 17 章：标准库集合](./17-collections.md) | Vec、HashMap、String 等集合类型 | ⭐⭐⭐⭐ |
-| [第 18 章：测试](./18-testing.md) | 单元测试、集成测试、文档测试 | ⭐⭐⭐⭐ |
-| [第 19 章：unsafe Rust 与 FFI](./19-unsafe-ffi.md) | unsafe 块、原始指针、FFI | ⭐⭐⭐ |
+| [第 18 章：标准库集合](./18-collections.md) | Vec、HashMap、String 等集合类型 | ⭐⭐⭐⭐ |
+| [第 19 章：测试](./19-testing.md) | 单元测试、集成测试、文档测试 | ⭐⭐⭐⭐ |
+| [第 20 章：unsafe Rust 与 FFI](./20-unsafe-ffi.md) | unsafe 块、原始指针、FFI | ⭐⭐⭐ |
 
 ### 附录
 
