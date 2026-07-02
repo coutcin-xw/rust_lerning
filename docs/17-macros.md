@@ -147,7 +147,7 @@ debug_vars!(x, name);
 
 ## 宏的卫生性
 
-Rust 宏是**卫生的**——宏内部定义的变量不会污染外部作用域：
+Rust 宏是**卫生的（hygienic）**——宏内部定义的变量不会与外部同名变量冲突：
 
 ```rust
 macro_rules! using_x {
@@ -158,10 +158,233 @@ macro_rules! using_x {
 }
 
 let x = "外部的 x";
-using_x!();            // 输出：宏内: 宏内部的 x
-println!("外部: {}", x);  // 输出：外部: 外部的 x
-// 两个 x 互不影响
+using_x!();                 // 宏内: 宏内部的 x
+println!("外部: {}", x);     // 外部: 外部的 x
+// 两个 x 互不影响——这是编译器的 hygiene 机制
 ```
+
+**但也有例外：** 通过 `$name:ident` 传入的标识符**会**与外部作用域交互，因为它们来自调用处。除此之外，宏内部自己定义的名字是隔离的。
+
+## 机制层：宏展开如何工作
+
+### 编译器阶段
+
+```
+源代码 → 词法分析(token) → macro_rules! 展开 → AST → 类型检查 → 代码生成
+                            ↑
+                      宏在这一步被"内联展开"
+                      展开后的代码和其他代码一视同仁
+```
+
+宏匹配的是 **token tree**——不是字符串、不是 AST。这意味着：
+- `1 + 2` 是三个 token：`1`, `+`, `2`
+- `vec![1, 2]` 作为一个 `expr` fragment 整体匹配
+- 宏不会匹配括号内部（除非用 `tt` 深入）
+
+### 调试宏：cargo expand
+
+```bash
+cargo install cargo-expand
+cargo expand                    # 展开当前 crate 的所有宏
+cargo expand --lib              # 只展开 lib.rs
+cargo expand some_module::func  # 只展开特定项
+```
+
+这是理解宏行为最有效的工具。写宏时，`cargo expand` 开着，写一条规则跑一次，立即看到展开结果。
+
+### 内部规则模式（`@` 约定）
+
+复杂宏通常拆成多个辅助"内部规则"，用 `@` 前缀标记私有模式：
+
+```rust
+macro_rules! sorted_vec {
+    // 公开入口——接收普通参数
+    ($($x:expr),* $(,)?) => {
+        sorted_vec!(@inner [$($x),*])
+    };
+
+    // 内部规则——用 @inner 标记，不暴露给调用者
+    (@inner [$($sorted:expr),*] $first:expr, $($rest:expr),*) => {
+        sorted_vec!(@inner [$($sorted,)* insert($first, [$($rest),*])])
+    };
+
+    (@inner [$($sorted:expr),*]) => {
+        vec![$($sorted),*]
+    };
+}
+```
+
+### TT Muncher 模式
+
+利用 `tt` fragment specifier 逐个"吃掉" token 的递归模式：
+
+```rust
+macro_rules! html {
+    // 基础情况：无内容标签
+    ($tag:ident {}) => {
+        format!("<{0}></{0}>", stringify!($tag))
+    };
+
+    // 递归情况：逐个吃掉属性
+    ($tag:ident { $($rest:tt)* }) => {
+        html!(@attrs $tag [] $($rest)*)
+    };
+
+    // 内部：累积属性
+    (@attrs $tag:ident [$($attrs:tt)*] $key:ident = $val:expr, $($rest:tt)*) => {
+        html!(@attrs $tag [$($attrs)* $key=$val] $($rest)*)
+    };
+
+    (@attrs $tag:ident [$($attrs:tt)*]) => {
+        format!("<{} {:?}></{}>", stringify!($tag), vec![$($attrs)*], stringify!($tag))
+    };
+}
+
+// 使用
+let el = html!(div { class = "container", id = "main" });
+```
+
+## 代码层：更多实战宏
+
+### struct_builder! — 生成 Builder 模式
+
+```rust
+macro_rules! struct_builder {
+    // 入口：接收结构体名和字段定义
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $name:ident {
+            $($field_vis:vis $field:ident: $field_ty:ty),* $(,)?
+        }
+    ) => {
+        // 原始结构体
+        $(#[$meta])*
+        $vis struct $name {
+            $($field_vis $field: $field_ty),*
+        }
+
+        // 自动生成的 Builder
+        #[derive(Default)]
+        $vis struct [<$name Builder>] {
+            $( $field: Option<$field_ty>, )*
+        }
+
+        impl [<$name Builder>] {
+            $(
+                pub fn $field(mut self, value: $field_ty) -> Self {
+                    self.$field = Some(value);
+                    self
+                }
+            )*
+
+            pub fn build(self) -> Result<$name, String> {
+                Ok($name {
+                    $(
+                        $field: self.$field.ok_or(
+                            format!("字段 {} 未设置", stringify!($field))
+                        )?,
+                    )*
+                })
+            }
+        }
+    };
+}
+
+// 使用
+struct_builder! {
+    pub struct Connection {
+        host: String,
+        port: u16,
+        timeout: u64,
+    }
+}
+
+// 宏展开后自动生成 ConnectionBuilder
+let conn = ConnectionBuilder::default()
+    .host("localhost".into())
+    .port(8080)
+    .timeout(30)
+    .build()
+    .unwrap();
+```
+
+### enum_str! — 自动为枚举生成 Display 和 FromStr
+
+```rust
+macro_rules! enum_str {
+    (
+        $(#[$meta:meta])*
+        $vis:vis enum $name:ident {
+            $($variant:ident $(= $val:expr)?),* $(,)?
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        $vis enum $name {
+            $($variant),*
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $( $name::$variant => write!(f, "{}", stringify!($variant)), )*
+                }
+            }
+        }
+
+        impl std::str::FromStr for $name {
+            type Err = String;
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $( stringify!($variant) => Ok($name::$variant), )*
+                    _ => Err(format!("未知变体: {}", s)),
+                }
+            }
+        }
+    };
+}
+
+enum_str! {
+    pub enum Status {
+        Active,
+        Inactive,
+        Pending,
+    }
+}
+
+let s: Status = "Active".parse().unwrap();
+println!("{}", s);  // Active
+```
+
+## 实践层：宏编写指南
+
+### 调试宏的步骤
+
+1. **先写目标代码**——写出你期望宏展开后产生的代码
+2. **替换可变部分为 `$name`**——找出哪些部分需要参数化
+3. **逐步添加匹配规则**——一次只加一条规则，用 `cargo expand` 验证
+4. **处理边界情况**——空输入、单个输入、多个输入
+
+### 常见陷阱
+
+> ⚠️ **左递归导致展开死循环。** 如果宏的第一条规则匹配自身（直接或间接），编译器无限展开直到报错。用"内部规则"模式解决——递归调用用不同前缀。
+
+> ⚠️ **匹配歧义。** 多条规则同时匹配时，编译器选**第一条匹配的**。把更具体的规则放前面，通用的放后面。
+
+> ⚠️ **忘记卫生性例外。** 从调用者传入的标识符（`$name:ident`）会引用调用者作用域的名字。如果宏内部创建了同名变量，通过 identifier 传入的引用不受 hygiene 保护。
+
+> ⚠️ **过度使用 `tt`。** `tt` 最灵活但也最容易出错。优先用 `expr`、`ident`、`ty` 等具体 specifier——编译器会提供更好的错误信息。
+
+### 声明式宏 vs 过程宏
+
+| 选择 | 场景 |
+|------|------|
+| `macro_rules!` | 简单的模式替换、重复展开、短小精悍 |
+| 派生宏 `#[derive]` | 自动生成 trait 实现（serde 风格） |
+| 属性宏 `#[attr]` | 需要访问/修改被修饰的项的 AST |
+| 函数式宏 `macro!()` | 自定义 DSL 语法 |
+
+声明式宏的优点：写在同一个文件、不需要额外 crate、学习成本低。
 
 ## 常用内置宏
 

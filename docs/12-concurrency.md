@@ -164,52 +164,296 @@ let lock2 = Arc::new(Mutex::new(0));
 
 防范死锁：**始终按相同顺序获取锁**；尽量缩小锁的持有范围。
 
-## Send 和 Sync Trait
+## Send 和 Sync — 编译期线程安全
 
-这两个 trait 是 Rust 并发安全的基础——编译器自动为类型实现：
+这两个 trait 是 Rust 并发安全的基石，由编译器自动推导：
 
-| Trait | 含义 | 反例 |
-|-------|------|------|
-| `Send` | 类型的**所有权**可以安全地转移到其他线程 | `Rc<T>`（非原子引用计数） |
-| `Sync` | 类型的**共享引用**可以安全地在线程间传递 | `RefCell<T>`（运行时借用检查） |
+| Trait | 含义 | 自动实现条件 |
+|-------|------|------------|
+| `Send` | 类型的所有权可安全转移到其他线程 | 类型的**所有字段**都是 `Send` |
+| `Sync` | 类型的共享引用 `&T` 可在线程间安全传递 | 类型的**所有字段**都是 `Sync` |
 
 ```rust
-// 大部分类型是 Send + Sync
-fn is_send_sync<T: Send + Sync>() {}
+// 大部分标准库类型是 Send + Sync
+fn assert_send_sync<T: Send + Sync>() {}
 
-is_send_sync::<i32>();       // ✅
-is_send_sync::<String>();    // ✅
-// is_send_sync::<Rc<i32>>();   // ❌ Rc 不是 Send
-// is_send_sync::<RefCell<i32>>();  // ❌ RefCell 不是 Sync
+assert_send_sync::<i32>();         // ✅ 简单类型
+assert_send_sync::<String>();      // ✅
+
+// 不是 Send 的类型
+// assert_send_sync::<Rc<i32>>();     // ❌ Rc 用非原子操作
+// assert_send_sync::<*const i32>();  // ❌ 原始指针
+
+// 不是 Sync 的类型
+// assert_send_sync::<RefCell<i32>>(); // ❌ 运行时借用检查非线程安全
+// assert_send_sync::<Cell<i32>>();    // ❌ 同上
 ```
 
-## 其他同步原语
+**为什么 Rc 不是 Send？** `Rc` 的引用计数用的是普通 `+1/-1`，不是原子操作。如果两个线程同时 clone，计数可能错乱。`Arc` 用原子操作替代，所以 `Arc` 是 `Send`。
 
-| 类型 | 用途 | 使用场景 |
-|------|------|---------|
-| `RwLock<T>` | 读写锁：多读单写 | 读多写少的场景 |
-| `Barrier` | 所有线程到达同一点才继续 | 分阶段并行计算 |
-| `Condvar` | 条件变量：等待某条件成立 | 生产者-消费者复杂场景 |
-| `OnceLock<T>` | 只初始化一次的值 | 全局延迟初始化的配置 |
-| `Atomic*` | 无锁原子操作 | 简单计数器、状态标志 |
+## 机制层：并发原语如何工作
+
+### mpsc::channel 的内部
+
+```rust
+use std::sync::mpsc;
+
+// 默认：无缓冲通道（同步通道）
+let (tx, rx) = mpsc::channel();
+// tx.send() 会阻塞直到 rx 接收数据——"会合"语义
+
+// 有缓冲通道
+let (tx, rx) = mpsc::sync_channel(10);
+// tx.send() 只在缓冲区满时才阻塞
+
+// 通道关闭机制：
+// - 所有 tx（包括 clone）被 drop → 通道关闭
+// - rx.recv() 返回 Err(RecvError)
+// - rx 作为迭代器自然结束
+```
+
+### Mutex 内部和锁中毒
+
+```rust
+use std::sync::Mutex;
+
+let m = Mutex::new(42);
+
+// lock() 阻塞当前线程直到获取锁
+let mut guard = m.lock().unwrap();
+
+// MutexGuard<T> 实现了 Deref<Target=T> 和 DerefMut
+*guard += 1;  // 直接修改内部值
+
+// MutexGuard 实现了 Drop → 离开作用域自动释放锁
+drop(guard);
+
+// "锁中毒"（lock poisoning）：
+// 如果另一个线程在持有锁时 panic，锁被标记为"中毒"
+// 之后的 lock() 返回 Err(PoisonError)，你需要决定是否继续
+match m.lock() {
+    Ok(guard) => { /* 正常使用 */ }
+    Err(poisoned) => {
+        // 锁中毒了——数据可能处于不一致状态
+        let guard = poisoned.into_inner();  // 仍然可以获取数据
+        // 但你要小心使用
+    }
+}
+```
+
+### Arc 的原子引用计数
+
+```rust
+use std::sync::Arc;
+
+let a = Arc::new(String::from("data"));
+// 堆上： [ref_count: 1 (atomic)] [String 数据]
+let b = Arc::clone(&a);
+// 堆上： [ref_count: 2 (atomic)] — 原子递增
+// a 和 b 各占 8 字节（一个指针）
+drop(a);
+// 堆上： [ref_count: 1 (atomic)] — 原子递减
+drop(b);
+// ref_count 归零 → 释放堆内存
+```
+
+## 代码层：更多并发原语示例
+
+### Scoped Threads — 安全借用局部变量
+
+```rust
+use std::thread;
+
+let data = vec![1, 2, 3, 4, 5];
+
+thread::scope(|s| {
+    // scope 内的所有线程保证在 scope 结束前全部 join
+
+    s.spawn(|| {
+        println!("线程1: {:?}", data);  // 直接借用！不需要 move
+    });
+
+    s.spawn(|| {
+        println!("线程2: 长度={}", data.len());
+    });
+
+    // scope 结束 → 自动 join 所有线程
+});
+
+println!("所有线程完成，data 仍可用: {:?}", data);
+// scope 保证：所有子线程结束时，data 还活着
+```
+
+> 💡 `thread::scope` (Rust 1.63+) 是 `thread::spawn` 的增强版。在 scope 内 spawn 的线程可以安全借用局部变量，编译器保证线程在 scope 结束前全部 join。
+
+### RwLock — 读多写少
+
+```rust
+use std::sync::RwLock;
+
+let cache = RwLock::new(HashMap::new());
+
+// 多个读可以同时
+let data = cache.read().unwrap();
+let val = data.get("key").copied();
+drop(data);  // 释放读锁
+
+// 写独占
+let mut data = cache.write().unwrap();
+data.insert("key".to_string(), 42);
+```
+
+### Barrier — 同步点
+
+```rust
+use std::sync::{Arc, Barrier};
+use std::thread;
+
+let barrier = Arc::new(Barrier::new(3));  // 等待 3 个线程
+let mut handles = vec![];
+
+for i in 0..3 {
+    let b = Arc::clone(&barrier);
+    handles.push(thread::spawn(move || {
+        println!("线程 {}: 阶段1", i);
+        b.wait();  // 阻塞，直到 3 个线程都到达
+        println!("线程 {}: 阶段2（所有人到齐后继续）", i);
+    }));
+}
+```
+
+### Atomic — 无锁计数
+
+```rust
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::thread;
+
+let counter = Arc::new(AtomicU64::new(0));
+let mut handles = vec![];
+
+for _ in 0..100 {
+    let c = Arc::clone(&counter);
+    handles.push(thread::spawn(move || {
+        for _ in 0..1000 {
+            c.fetch_add(1, Ordering::SeqCst);  // 原子操作，无需 Mutex
+        }
+    }));
+}
+
+for h in handles { h.join().unwrap(); }
+println!("{}", counter.load(Ordering::SeqCst));  // 100000
+```
+
+`Ordering` 控制内存顺序保证：`SeqCst` 最严格（默认选择），`Relaxed` 最宽松（仅保证原子性，不保证顺序）。初期用 `SeqCst`，性能敏感时再调整。
+
+## 实践层：并发模式
+
+### Worker Pool 模式
+
+```rust
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+struct ThreadPool {
+    workers: Vec<Worker>,
+    sender: Option<mpsc::Sender<Job>>,
+}
+
+struct Worker {
+    id: usize,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+impl ThreadPool {
+    fn new(size: usize) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let rx = Arc::new(Mutex::new(rx));
+
+        let mut workers = Vec::with_capacity(size);
+        for id in 0..size {
+            let rx = Arc::clone(&rx);
+            workers.push(Worker {
+                id,
+                thread: Some(thread::spawn(move || loop {
+                    let job = rx.lock().unwrap().recv();
+                    match job {
+                        Ok(job) => job(),
+                        Err(_) => break,  // 通道关闭，退出
+                    }
+                })),
+            });
+        }
+
+        ThreadPool { workers, sender: Some(tx) }
+    }
+
+    fn execute<F>(&self, f: F)
+    where F: FnOnce() + Send + 'static
+    {
+        self.sender.as_ref().unwrap().send(Box::new(f)).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        drop(self.sender.take());  // 关闭通道 → worker 线程退出
+        for worker in &mut self.workers {
+            if let Some(thread) = worker.thread.take() {
+                thread.join().unwrap();
+            }
+        }
+    }
+}
+```
+
+### Fan-out / Fan-in 模式
+
+多个 worker 并行处理数据，结果收集到一个通道：
+
+```rust
+let (result_tx, result_rx) = mpsc::channel();
+
+// Fan-out: 分发任务到多个线程
+for chunk in data.chunks(100) {
+    let chunk = chunk.to_vec();
+    let tx = result_tx.clone();
+    thread::spawn(move || {
+        let result = process_chunk(&chunk);
+        tx.send(result).unwrap();
+    });
+}
+drop(result_tx);  // 关闭发送端
+
+// Fan-in: 收集结果
+let results: Vec<_> = result_rx.iter().collect();
+```
 
 ## 并发模式选择指南
 
 ```
-需要并行计算独立任务？      → thread::spawn + join
-需要线程间通信？            → mpsc::channel（消息传递）
-需要多个线程读写共享数据？   → Arc<Mutex<T>> 或 Arc<RwLock<T>>
-只需要简单计数？            → AtomicU32 等（无锁，最快）
-多读少写？                  → Arc<RwLock<T>>
-分阶段并行（所有人到齐再继续）→ Barrier
+模式                                    适用场景                原语
+──────────────────────────────────────────────────────────────────────
+独立任务并行                           计算密集型              thread::spawn + join
+线程间发送消息                         解耦的生产者-消费者      mpsc::channel
+共享可变状态                           缓存/配置               Arc<Mutex<T>>
+读多写少                               缓存读取                Arc<RwLock<T>>
+简单计数/标志                          统计/退出信号           Atomic*
+分阶段并行                             所有线程到齐再继续      Barrier
+等待条件通知                           等待资源就绪            Condvar
+延迟初始化                             全局单例               OnceLock / Once
+安全借用局部变量到线程中               临时多线程              thread::scope
+任务队列                               工作池                 channel + worker loop
 ```
 
 ## 练习
 
-1. 创建 N 个线程，每个线程计算一个区间的素数个数，最后汇总
-2. 用 mpsc channel 实现生产者-消费者：一个线程生成随机数，另一个线程接收并求和打印
-3. 用 `Arc<Mutex<Vec<T>>>` 实现一个线程安全的日志记录器
-4. 阅读 `std::sync::atomic` 文档，用 `AtomicUsize` 实现无锁计数器
+1. 创建 N 个线程并行计算不同区间的素数，汇总到 `Arc<Mutex<Vec<u64>>>`
+2. 用 mpsc channel 实现生产者-消费者：3 个生产者生成随机数，1 个消费者汇总
+3. 实现一个简化版 `ThreadPool`，支持 `pool.execute(|| { ... })`
+4. 用 `AtomicU64` 实现无锁计数器，benchmark 对比 `Arc<Mutex<u64>>` 的性能差异
 
 ---
 
