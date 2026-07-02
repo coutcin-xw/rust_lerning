@@ -87,59 +87,190 @@ struct Config { /* ... */ }
 
 ### Feature Flags — 可选功能模块
 
-在 `Cargo.toml` 中：
+Feature flag 是 Rust 的**条件编译开关**。它的核心用途：**让你的 crate 提供可选功能，用户只编译他们需要的部分。**
+
+为什么需要 feature flags？
+- 库的某些功能依赖较重的第三方 crate（如 `serde`、`tokio`），但并非所有用户都需要
+- 同一套代码需要支持多种配置（有/无 TLS、同步/异步）
+- 减少编译时间和二进制体积——不需要的代码根本不编译
+
+#### Cargo.toml 配置详解
+
+```toml
+[package]
+name = "my-lib"
+version = "0.1.0"
+edition = "2024"
+
+# ─── Feature 定义 ───
+[features]
+# 默认启用的 feature 集合（用户不指定时生效）
+default = ["std"]
+
+# 纯标记 feature：不依赖其他 feature，也不启用额外依赖
+# 用于代码中的 #[cfg(feature = "std")] 判断
+std = []
+
+# 启用特定可选依赖的 feature
+# "dep:tokio" 语法：启用名为 tokio 的可选依赖
+async = ["dep:tokio"]
+
+# 一个 feature 可以同时启用多个依赖
+# 这里同时启用 serde 和 serde_json 两个可选依赖
+serde = ["dep:serde", "dep:serde_json"]
+
+# 纯标记 feature（不关联依赖，仅用于代码中的 cfg 判断）
+tls = []
+
+# 组合 feature：一键启用一组功能
+# 用户写 features = ["full"] 等价于启用 std + async + serde + tls
+full = ["std", "async", "serde", "tls"]
+
+# ─── 依赖声明 ───
+[dependencies]
+# optional = true：这个依赖默认不编译
+# 只有某个 feature 通过 "dep:tokio" 启用它时才编译
+tokio = { version = "1", optional = true }
+
+# 即使被 feature 启用，依赖本身也可以有自己的 feature 配置
+serde = { version = "1", optional = true, features = ["derive"] }
+
+serde_json = { version = "1", optional = true }
+
+# 非可选的依赖总是编译
+anyhow = "1"
+```
+
+#### 逐行解读
+
+**`default = ["std"]`**
+当用户写 `cargo build`（不加 `--features`）时，默认启用 `std` feature。如果不想任何默认行为，设置 `default = []`，用户需要 `cargo build --no-default-features`。
+
+**`std = []`**
+一个"纯标记" feature。`[]` 表示它自己不启用任何额外依赖，只是作为一个标记名存在。代码中通过 `#[cfg(feature = "std")]` 判断是否启用。常见于 `no_std` 库（嵌入式场景，关闭标准库）。
+
+**`async = ["dep:tokio"]`**
+`dep:xxx` 是启用可选依赖的语法。当用户启用 `async` feature 时，`tokio` 依赖被激活并编译。注意：`dep:tokio` 中的名字对应 `[dependencies]` 中声明的包名，不是 feature 名。
+
+**`serde = ["dep:serde", "dep:serde_json"]`**
+一个 feature 可以同时启用多个可选依赖。当用户只需要序列化功能时，他们不需要引入整个 `full` feature 的其他依赖。
+
+**依赖自身也有 features**
+`serde = { version = "1", optional = true, features = ["derive"] }` 中：
+- `optional = true`：默认不编译此依赖
+- `features = ["derive"]`：**当这个依赖被启用时**，同时启用 serde 自身的 `derive` feature
+
+#### Feature 的传递和合并
+
+当你的 crate 被其他 crate 依赖时：
+
+```toml
+# 你的 crate：my-lib
+[features]
+serde = ["dep:serde"]
+
+# 下游用户：their-app
+[dependencies]
+my-lib = { version = "1", features = ["serde"] }
+# 用户不需要在自己的 Cargo.toml 里声明 serde
+# Cargo 会自动合并——把 my-lib 的 serde feature 和 serde 依赖一起启用
+```
+
+你需要为 feature **显式传递**子依赖的 feature：
 
 ```toml
 [features]
-default = ["std"]
-std = []
-async = ["dep:tokio"]
-serde = ["dep:serde", "dep:serde_json"]
-tls = []
-full = ["std", "async", "serde", "tls"]
+# ❌ 不够：如果 my-lib 公开暴露了 serde 的类型给用户
+serde = ["dep:serde"]
 
-[dependencies]
-tokio = { version = "1", optional = true }
-serde = { version = "1", optional = true, features = ["derive"] }
-serde_json = { version = "1", optional = true }
+# ✅ 需要的：把 serde 的 derive feature 也传递出去
+serde = ["dep:serde", "serde/derive"]
+#                          ^^^^^^^^^^^^^ 传递 serde 自身的 feature
 ```
 
-在代码中使用：
+#### 代码中使用
 
 ```rust
-// 条件函数实现
+// 条件函数——不同 feature 对应不同实现
 #[cfg(feature = "async")]
-pub async fn process(data: &[u8]) -> Result<Output, Error> { /* ... */ }
+pub async fn process(data: &[u8]) -> Result<Output, Error> {
+    // 使用 tokio 的异步实现
+}
 
 #[cfg(not(feature = "async"))]
-pub fn process(data: &[u8]) -> Result<Output, Error> { /* ... */ }
+pub fn process(data: &[u8]) -> Result<Output, Error> {
+    // 同步回退实现
+}
 
 // 条件结构体字段
 pub struct Client {
     base_url: String,
+    timeout: u64,
+
     #[cfg(feature = "tls")]
-    tls_config: TlsConfig,
+    tls_config: TlsConfig,  // 只在 tls feature 启用时存在
 }
 
 // 条件导入
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
+
+#[cfg(feature = "serde")]
+#[derive(Serialize, Deserialize)]
+pub struct Config {
+    pub port: u16,
+}
+// 没有 serde feature 时，Config 不实现 Serialize/Deserialize
+
+// 条件模块——整个模块只在某个 feature 下编译
+#[cfg(feature = "std")]
+pub mod sync_impl { /* ... */ }
+
+#[cfg(not(feature = "std"))]
+pub mod no_std_impl { /* ... */ }
 ```
+
+#### 常用 cargo 命令
 
 ```bash
-cargo build --features "async serde"
-cargo build --no-default-features
-cargo test --all-features
+cargo build --features "async serde"   # 启用指定 feature
+cargo build --all-features             # 启用所有 feature
+cargo build --no-default-features      # 不启用任何默认 feature
+cargo build --no-default-features --features "std,tls"  # 手工挑选
+
+cargo test --all-features              # 用全部 feature 配置跑测试
+cargo doc --all-features               # 生成包含所有 feature 的文档
 ```
 
-### 实战：feature 门控
+#### Feature Flag 最佳实践
+
+> ⚠️ **feature 应该具有可加性（additive）。** 启用一个 feature 不应该移除功能或改变现有 API 的行为。如果用户写 `--all-features`，所有 feature 的组合应该是合法的。
+
+> ⚠️ **避免 feature 之间互斥。** 不要设计 "启用 A 就不能启用 B" 的 feature。如果确实需要二选一，考虑用编译期错误提示。
+
+> ⚠️ **为每个 feature 编写测试。** CI 中应该用 `--all-features` 跑一遍，也要用 `--no-default-features` 跑一遍，确保各种组合都能编译。
+
+> 💡 **在文档中清楚说明每个 feature 的作用。** 用户看到 `[features]` 列表时不应该需要猜每个 feature 干什么。
+
+#### 实战：带 feature 门控的 Client
 
 ```rust
+/// HTTP 客户端构造器
+///
+/// # Features
+///
+/// - `tls`: 启用 TLS/HTTPS 支持
+/// - `gzip`: 启用响应自动解压缩
 pub struct ClientBuilder {
     url: String,
     timeout: u64,
+
+    // 这些字段只在对应 feature 启用时存在
     #[cfg(feature = "tls")]
     tls_enabled: bool,
+
+    #[cfg(feature = "gzip")]
+    accept_gzip: bool,
 }
 
 impl ClientBuilder {
@@ -148,19 +279,50 @@ impl ClientBuilder {
             url: url.into(),
             timeout: 30,
             #[cfg(feature = "tls")]
-            tls_enabled: false,
+            tls_enabled: true,   // 默认开启 TLS（如果 feature 存在）
+            #[cfg(feature = "gzip")]
+            accept_gzip: true,
         }
     }
 
-    // 仅 tls feature 启用时才存在此方法
+    // 这个方法只在 tls feature 启用时才存在
     #[cfg(feature = "tls")]
     pub fn tls(mut self, enabled: bool) -> Self {
         self.tls_enabled = enabled;
         self
     }
 
-    pub fn build(self) -> Client { /* ... */ }
+    // 这个方法也一样
+    #[cfg(feature = "gzip")]
+    pub fn gzip(mut self, enabled: bool) -> Self {
+        self.accept_gzip = enabled;
+        self
+    }
+
+    pub fn build(self) -> Client {
+        Client {
+            inner: HttpClient::new(&self.url),
+            timeout: self.timeout,
+            #[cfg(feature = "tls")]
+            tls: self.tls_enabled.then(TlsConfig::default),
+            #[cfg(feature = "gzip")]
+            gzip: self.accept_gzip,
+        }
+    }
 }
+```
+
+```toml
+# Cargo.toml 对应的 feature 配置
+[features]
+default = ["tls"]
+tls = ["dep:rustls"]        # TLS 需要 rustls
+gzip = ["dep:flate2"]        # Gzip 需要 flate2
+full = ["tls", "gzip"]
+
+[dependencies]
+rustls = { version = "0.23", optional = true }
+flate2 = { version = "1", optional = true }
 ```
 
 ## Cargo Workspace — 多 crate 管理
