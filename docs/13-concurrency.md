@@ -8,13 +8,56 @@
 - 理解 `Send` 和 `Sync` trait
 - 树立"消息传递优先于共享内存"的并发理念
 
-## Rust 的并发——编译期保证安全
+## 概念层：Rust 的并发——编译期保证安全
 
 在大多数语言中，并发 bug（数据竞争、死锁）是运行时调试的噩梦。Rust 的类型系统和借用规则**在编译期就捕获了数据竞争**。
 
 > "无畏并发"（Fearless Concurrency）不是说并发容易写，而是说——一旦编译通过，就没有隐晦的并发 bug。
 
-## 创建线程
+### 两种并发模型
+
+Rust 标准库提供了两套互补的并发工具：
+
+| 模型 | 核心工具 | 哲学 |
+|------|---------|------|
+| 消息传递 | `mpsc::channel` | "不要通过共享内存来通信，要通过通信来共享内存" |
+| 共享状态 | `Mutex<T>` + `Arc<T>` | 用锁保护共享数据，所有权系统保证锁的使用安全 |
+
+二者并非互斥——你可以（也经常会）在一个程序中同时使用。
+
+## 机制层：Send 和 Sync — 编译期线程安全
+
+**Send 和 Sync 是 Rust 并发安全的基石。** 在你写一行 `thread::spawn` 之前，理解这两个 trait 会帮你避免最多的编译错误。
+
+- **`Send`**：类型 T 是 `Send` 意味着**T 的所有权可以在线程间安全转移**。几乎所有类型都是 `Send`，例外包括 `Rc<T>`（非原子引用计数）。
+- **`Sync`**：类型 T 是 `Sync` 意味着**`&T` 可以在线程间安全共享**。等价于 `&T` 是 `Send`。
+
+```rust
+// Send 示例：所有权转移
+let data = vec![1, 2, 3];          // Vec<i32> 是 Send
+thread::spawn(move || {
+    println!("{:?}", data);        // ✅ data 被 move 进线程
+});
+
+// Sync 示例：引用共享
+let counter = Arc::new(Mutex::new(0));  // Arc<Mutex<u32>> 是 Sync
+let c = counter.clone();
+thread::spawn(move || {
+    *c.lock().unwrap() += 1;       // ✅ 通过引用共享
+});
+```
+
+| Trait | 含义 | 非线程安全版本 | 线程安全版本 |
+|-------|------|:---:|:---:|
+| `Send` | 所有权可跨线程 | `Rc<T>` ❌ | `Arc<T>` ✅ |
+| `Sync` | 引用可跨线程 | `RefCell<T>` ❌ | `Mutex<T>` ✅ |
+| | | `Cell<T>` ❌ | `AtomicU64` ✅ |
+
+> 💡 `Send` 和 `Sync` 是**自动推导**的——如果你的类型的所有字段都是 `Send`，你的类型也是 `Send`。你通常不需要手动实现它们。如果编译器报 "not Send"，检查是否用了 `Rc` 或 `RefCell`。
+
+## 代码层：线程创建与消息传递
+
+### 创建线程
 
 ```rust
 use std::thread;
@@ -53,7 +96,7 @@ let handle = thread::spawn(move || {
 
 为什么必须 `move`？线程可能比创建它的作用域活得更久。如果闭包只借用了局部变量，当局部变量被释放时线程还在引用它——悬垂引用。`move` 强制闭包获取所有权，消除这种可能性。
 
-## 消息传递——mpsc::channel
+### 消息传递——mpsc::channel
 
 Rust 标准库提供**多生产者、单消费者**（mpsc）通道：
 
@@ -107,7 +150,7 @@ for msg in rx {
 
 > 💡 `mpsc` = Multiple Producer, Single Consumer。只有一个接收端，但有多个发送端（通过 `clone`）。
 
-## 共享状态——Mutex + Arc
+### 共享状态——Mutex + Arc
 
 ### Mutex\<T\> — 互斥锁
 
@@ -164,34 +207,7 @@ let lock2 = Arc::new(Mutex::new(0));
 
 防范死锁：**始终按相同顺序获取锁**；尽量缩小锁的持有范围。
 
-## Send 和 Sync — 编译期线程安全
-
-这两个 trait 是 Rust 并发安全的基石，由编译器自动推导：
-
-| Trait | 含义 | 自动实现条件 |
-|-------|------|------------|
-| `Send` | 类型的所有权可安全转移到其他线程 | 类型的**所有字段**都是 `Send` |
-| `Sync` | 类型的共享引用 `&T` 可在线程间安全传递 | 类型的**所有字段**都是 `Sync` |
-
-```rust
-// 大部分标准库类型是 Send + Sync
-fn assert_send_sync<T: Send + Sync>() {}
-
-assert_send_sync::<i32>();         // ✅ 简单类型
-assert_send_sync::<String>();      // ✅
-
-// 不是 Send 的类型
-// assert_send_sync::<Rc<i32>>();     // ❌ Rc 用非原子操作
-// assert_send_sync::<*const i32>();  // ❌ 原始指针
-
-// 不是 Sync 的类型
-// assert_send_sync::<RefCell<i32>>(); // ❌ 运行时借用检查非线程安全
-// assert_send_sync::<Cell<i32>>();    // ❌ 同上
-```
-
-**为什么 Rc 不是 Send？** `Rc` 的引用计数用的是普通 `+1/-1`，不是原子操作。如果两个线程同时 clone，计数可能错乱。`Arc` 用原子操作替代，所以 `Arc` 是 `Send`。
-
-## 机制层：并发原语如何工作
+## 深入机制：并发原语的内部原理
 
 ### mpsc::channel 的内部
 
@@ -257,7 +273,7 @@ drop(b);
 // ref_count 归零 → 释放堆内存
 ```
 
-## 代码层：更多并发原语示例
+## 更多并发原语
 
 ### Scoped Threads — 安全借用局部变量
 

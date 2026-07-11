@@ -9,6 +9,50 @@
 - 理解静态分发（单态化）和动态分发（`dyn Trait`）的取舍
 - 使用 RPIT 和 `use<..>` 精确控制生命周期捕获
 
+## 概念层：Trait 和泛型解决什么问题？
+
+### 问题 1：共享行为
+
+假设你有一个新闻文章和一条推文，它们都需要"生成摘要"。在 Java 里你会写一个 `interface`，在 Go 里你会写一个 `interface` 类型，在 C++ 里你会用虚函数。Rust 的选择是 **trait**：
+
+```rust
+// 不用 trait：每个类型有各自的方法名，无法统一调用
+fn summarize_article(a: &NewsArticle) -> String { /* ... */ }
+fn summarize_tweet(t: &Tweet) -> String { /* ... */ }
+
+// 用 trait：统一的方法签名，调用者不需要知道具体类型
+fn notify(item: &impl Summary) {
+    println!("{}", item.summarize());  // 统一的调用方式
+}
+```
+
+trait 不定义"对象是什么"，而定义**"能做什么"**——不关心你是 `NewsArticle` 还是 `Tweet`，只关心你能不能 `summarize()`。
+
+### 问题 2：代码复用
+
+泛型让你写一份代码处理多种类型。不用泛型的话，你需要为每个类型重复实现：
+
+```rust
+// 不用泛型：i32 和 char 各写一份
+fn largest_i32(list: &[i32]) -> &i32 { /* ... */ }
+fn largest_char(list: &[char]) -> &char { /* ... */ }
+
+// 用泛型：一份代码适配所有可比较的类型
+fn largest<T: PartialOrd>(list: &[T]) -> &T { /* ... */ }
+```
+
+### 与接口/继承的关键区别
+
+| | Rust trait | Java interface | C++ 虚函数 |
+|---|---|---|---|
+| 定义位置 | trait 所在 crate **或** 类型所在 crate（孤儿规则） | 类型定义时必须声明实现 | 声明类时指定继承 |
+| 后期绑定 | 明确用 `dyn Trait` 选择动态分发 | 默认动态分发 | 声明 `virtual` 即可 |
+| 默认实现 | ✅ 可在 trait 中提供 | ✅ default 方法 | ✅ |
+| 多继承 | ✅ 实现多个 trait | ✅ 实现多接口 | ✅ 多继承（含菱形问题） |
+| 零成本静态分发 | ✅ 默认（`<T: Trait>`） | ❌ | ✅（模板） |
+
+> 💡 Rust 的 trait 是**组合优于继承**的典范。你可以为已有类型实现新 trait（在孤儿规则允许下），不修改原类型定义。这在你使用第三方库的类型时尤其强大。
+
 ## Trait — 定义共享行为
 
 Trait 告诉编译器"实现了这个 trait 的类型必须提供这些方法"：
