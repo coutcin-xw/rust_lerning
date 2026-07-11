@@ -84,6 +84,136 @@ unsafe {
 
 `NonNull` 是 `Option` 友好的——`Option<NonNull<T>>` 和 `*mut T` 大小相同（8 字节），没有额外开销。
 
+### 指针运算与读写 — `*const T` / `*mut T` 的方法
+
+原始指针本身没有借用检查，但提供了一套精细的 unsafe 操作 API 来读写和移动内存：
+
+#### 偏移（算术运算）
+
+```rust
+use std::ptr;
+
+let mut data = [10i32, 20, 30, 40, 50];
+let base: *mut i32 = data.as_mut_ptr();
+
+unsafe {
+    // .add(n)：前进 n 个元素（不是字节！），达到第 n 个元素
+    let third = base.add(2);           // 指向 data[2]
+    println!("{}", *third);             // 30
+
+    // .sub(n)：后退 n 个元素
+    let first = base.add(4).sub(3);    // 指向 data[1]
+    println!("{}", *first);             // 20
+
+    // .offset(n)：与 add 相同，但 n 是 isize（可为负）
+    let last = base.offset(4);         // 指向 data[4]
+    println!("{}", *last);             // 50
+
+    // .offset_from(other)：计算两个指针之间的元素数（isize）
+    let dist = base.offset_from(base.add(3));
+    println!("距离: {}", dist);        // -3 (base 在 add(3) 之前 3 个元素)
+
+    // .byte_add(n) / .byte_offset(n)：按字节偏移
+    let raw_bytes: *const u8 = base as *const u8;
+    let second_byte = raw_bytes.byte_add(4);  // i32 占 4 字节，第 2 个 i32 的第一个字节
+}
+```
+
+#### 读与写
+
+```rust
+let mut value = 42i32;
+let p: *mut i32 = &mut value;
+
+unsafe {
+    p.write(100);             // 写入（不调用 drop，直接覆盖）
+    let v = p.read();         // 读取值（不移动，产生一个副本）
+    println!("{}", v);        // 100
+
+    // as_ref / as_mut：安全地转为引用（需保证指针有效）
+    let r: &i32 = p.as_ref().unwrap();  // Option<&T>
+    let r: &mut i32 = p.as_mut().unwrap();
+}
+```
+
+> ⚠️ `.read()` 读取值时是"位级拷贝"——不调用 `Copy`/`Clone`，也不会 drop 原位置的值。如果 T 有 Drop 实现，你需要自己管理：先 `read` 走值，再用不可丢弃的值（如 `MaybeUninit::uninit()`）覆盖原位，或者后续处理所有权。
+
+#### 替换与交换
+
+```rust
+let mut x = 10i32;
+let mut y = 20i32;
+let px: *mut i32 = &mut x;
+let py: *mut i32 = &mut y;
+
+unsafe {
+    ptr::swap(px, py);                 // 交换两个位置的值（x=20, y=10）
+
+    let old = ptr::replace(px, 99);    // 将 *px 设为 99，返回旧值
+    println!("旧值: {}", old);          // 20
+    println!("新值: {}", *px);          // 99
+}
+```
+
+#### 批量拷贝
+
+```rust
+let src = [1i32, 2, 3, 4];
+let mut dst = [0i32; 4];
+
+unsafe {
+    // copy_nonoverlapping：源和目标不重叠（更快，不检查重叠）
+    ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), 4);
+
+    // copy：源和目标可以重叠（类似 C 的 memmove）
+    // 用于需要支持重叠的场景，性能稍低
+    ptr::copy(dst.as_ptr().add(1), dst.as_mut_ptr(), 3);
+    // dst 现在 = [0, 1, 1, 2] （复制从 index=1 开始的 3 个元素到 index=0）
+}
+
+println!("{:?}", dst);
+```
+
+#### 指针转换
+
+```rust
+let value: u32 = 0xDEAD_BEEF;
+let p: *const u32 = &value;
+
+unsafe {
+    // cast：改变指针的类型（不改变地址）
+    let byte_ptr: *const u8 = p.cast::<u8>();
+
+    // 读取第一个字节
+    println!("{:02x}", *byte_ptr);  // 在小端序机器上是 EF
+
+    // 直接转换：*const T as *const U（效果同 cast）
+    let byte_ptr2 = p as *const u8;
+}
+```
+
+#### 常用方法速查
+
+| 方法 | 签名 | 作用 |
+|------|------|------|
+| `.add(n)` | `*const/mut T -> *const/mut T` | 前进 n 个元素 |
+| `.sub(n)` | `*const/mut T -> *const/mut T` | 后退 n 个元素 |
+| `.offset(n)` | `*const/mut T -> *const/mut T` | 偏移 n 个元素（可为负） |
+| `.byte_add(n)` | `*const/mut T -> *const/mut T` | 按字节偏移 |
+| `.read()` | `*const T -> T` | 位级拷贝读取 |
+| `.write(val)` | `*mut T` | 位级写入（不 drop） |
+| `.as_ref()` | `*const T -> Option<&T>` | 安全引用（需验证有效性） |
+| `.as_mut()` | `*mut T -> Option<&mut T>` | 安全可变引用 |
+| `.cast::<U>()` | `*const T -> *const U` | 类型转换 |
+| `ptr::swap(x, y)` | `*mut T, *mut T` | 交换两指针的值 |
+| `ptr::replace(dst, val)` | `*mut T, T -> T` | 替换并返回旧值 |
+| `ptr::copy(src, dst, n)` | `*const T, *mut T, usize` | 允许重叠的批量拷贝 |
+| `ptr::copy_nonoverlapping` | 同上 | 禁止重叠（更快） |
+| `ptr::drop_in_place(p)` | `*mut T` | 手动 drop（不释放内存） |
+| `ptr::null()` | `-> *const T` | 创建空指针 |
+| `ptr::null_mut()` | `-> *mut T` | 创建可变空指针 |
+| `p.is_null()` | `-> bool` | 判断是否空指针 |
+
 ### MaybeUninit\<T\> — 延迟初始化
 
 标准库中处理未初始化/部分初始化数据的基础设施：
