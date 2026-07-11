@@ -4,7 +4,7 @@
 
 - 定义并实现 trait（Rust 的接口抽象）
 - 用泛型编写类型参数化的代码
-- 理解 trait bound 如何约束泛型
+- 理解 trait bound 如何约束泛型，以及 supertrait、blanket impl 等高级模式
 - 掌握 `impl Trait` 在参数和返回值中的用法
 - 理解静态分发（单态化）和动态分发（`dyn Trait`）的取舍
 - 使用 RPIT 和 `use<..>` 精确控制生命周期捕获
@@ -82,6 +82,25 @@ fn notify<T>(item: &T) where T: Summary { }  // where 子句（复杂约束）
 fn render(components: &[Box<dyn Draw>]) {    // trait 对象，运行时虚表
     for c in components { c.draw(); }
 }
+
+// 5. Supertrait：要求实现者先实现另一个 trait
+trait Printable: std::fmt::Display {          // 实现 Printable 必须先实现 Display
+    fn print(&self) { println!("{}", self); }
+}
+
+// 6. trait 带生命周期参数 + Sized 约束
+pub trait Deserialize<'de>: Sized {           // ：Sized = supertrait
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>;
+}
+// 等价 where 写法：
+pub trait Deserialize<'de> where Self: Sized { /* ... */ }
+
+// 7. Blanket Implementation：为"所有满足条件的类型"批量实现
+impl<T: Display> ToString for T {             // 任何实现了 Display 的类型
+    fn to_string(&self) -> String {           // 自动获得 to_string()
+        format!("{}", self)
+    }
+}
 ```
 
 > 💡 `trait` 定义"能做什么"，`impl Trait for Type` 告诉"谁可以"，`T: Trait` 限制"对谁使用"，`dyn Trait` 运行时找到"谁来做"。四种语法，一个问题：如何对不同类型的共性行为建模。
@@ -135,6 +154,82 @@ impl std::fmt::Display for NewsArticle {
 ```
 
 > ⚠️ **孤儿规则**：你只能在 trait 所在的 crate **或**类型所在的 crate 中实现 trait。不能为外部类型实现外部 trait。这保证了 trait 实现的全局一致性。
+
+### Supertrait — 要求实现者先实现另一个 trait
+
+`trait B: A` 的意思是"要实现 B，必须先实现 A"。这等价于 `where Self: A`：
+
+```rust
+trait Printable: std::fmt::Display {    // Supertrait = Display
+    fn print(&self) {
+        println!("{}", self);           // ✅ 可以用 Display 的方法
+    }
+}
+// 等价写法：
+trait Printable where Self: std::fmt::Display {
+    fn print(&self) { println!("{}", self); }
+}
+```
+
+`Self` 在这里是"实现了 Printable 的那个类型"的占位符。编译器保证你能在 trait 内部直接使用 supertrait 的方法。
+
+```rust
+// ✅ i32 实现了 Display → 可以再实现 Printable
+impl Printable for i32 {}
+
+// ❌ 编译错误：Vec<u8> 没有实现 Display
+// impl Printable for Vec<u8> {}
+```
+
+### `trait Deserialize<'de>: Sized` — 组合生命周期 + Sized 约束
+
+这是 supertrait 模式最常见的应用之一：
+
+```rust
+pub trait Deserialize<'de>: Sized {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>;
+}
+```
+
+拆解这段声明：
+
+| 部分 | 含义 |
+|------|------|
+| `Deserialize<'de>` | trait 自身带一个生命周期参数 `'de` |
+| `: Sized` | 只有编译期大小已知的类型才能实现（排除 `str`、`dyn Trait` 等 DST） |
+| `Self` | 在 `impl Deserialize<'de> for MyType` 中 `Self = MyType` |
+| `-> Result<Self, D::Error>` | 返回"实现了该 trait 的那个类型"——静态分发，不是动态的 |
+
+> 💡 `Sized` 作为 supertrait 是最常见的约束模式——当方法的返回类型是 `Self` 时，编译器必须知道 `Self` 的大小。如果不加 `Sized` 约束，就不能返回 `Self`。
+
+### Blanket Implementation — 为所有满足条件的类型批量实现
+
+这是 Rust 标准库的基础模式之一。语法形式 `impl<泛型: 条件> Trait for 泛型`：
+
+```rust
+// 标准库中：任何 Display 类型自动获得 to_string()
+impl<T: std::fmt::Display> ToString for T {
+    fn to_string(&self) -> String {
+        format!("{}", self)
+    }
+}
+// 效果：i32、String、bool……所有 Display 类型都有了 to_string()
+
+// 自定义例子：为所有 Copy 类型扩展方法
+trait Double { fn double(self) -> Self; }
+
+impl<T: Copy + std::ops::Add<Output = T>> Double for T {
+    fn double(self) -> Self { self + self }
+}
+
+// 使用：i32、f64、u8……所有满足条件的类型自动获得 double()
+let a = 5.double();   // 10
+let b = 3.14.double(); // 6.28
+```
+
+> 💡 Blanket impl 是 Rust 生态的核心扩展机制——不是你为每个类型写实现，而是**一次性为所有满足条件的类型写实现**。`ToString`、`IntoIterator`、`From<T> for T` 都是这样实现的。
+
+**孤儿规则与 Blanket Impl 的关系：** Blanket impl 能生效的前提是 trait 和类型至少有一个在你的 crate 中。如果你定义了 `trait MyExt`，你也可以 `impl<T: Display> MyExt for T`——为所有外部类型扩展你的 trait。
 
 ## Trait 作为参数
 
@@ -527,6 +622,7 @@ trait Iterator {
 | `Debug` | 调试 `{:?}` 格式化 |
 | `Clone` | 显式深拷贝 |
 | `Copy` | 赋值时复制（标记 trait） |
+| `Sized` | 编译期大小已知（默认自动实现，DST 除外） |
 | `PartialEq` | `==` 和 `!=` |
 | `Eq` | 等价关系（`PartialEq` + 自反性） |
 | `PartialOrd` | `<`, `>`, `<=`, `>=` |
