@@ -70,9 +70,80 @@ impl<'a> Excerpt<'a> {
     fn part(&self) -> &'a str { self.part }
 }
 
-// 多个参数 —— 各自声明
+// 多个生命周期参数 —— 各自声明
 fn context<'a, 'b>(config: &'a str, request: &'b str) { }
 ```
+
+### 生命周期 + 泛型
+
+泛型和生命周期并列写在尖括号中，顺序任意：
+
+```rust
+use std::fmt::Display;
+
+// 生命周期 + 单个泛型
+fn first<'a, T>(slice: &'a [T]) -> &'a T { &slice[0] }
+
+// 泛型带 trait bound（where 子句）
+fn longest_with_msg<'a, T>(x: &'a str, y: &'a str, msg: T) -> &'a str
+where
+    T: Display,
+{
+    println!("{}", msg);
+    if x.len() > y.len() { x } else { y }
+}
+```
+
+### 生命周期 + Trait（直接写在 bound 里）
+
+```rust
+// T: 'a        —— 类型 T 包含的所有引用都活得 ≥ 'a
+// T: Trait + 'a —— T 实现 Trait 且内部引用 ≥ 'a
+// 'a: 'b       —— 'a 至少和 'b 一样长（生命周期子类型关系）
+
+use std::fmt::Debug;
+
+// 例子：T 是 Debug + 包含的引用 ≥ 'a
+fn debug_ref<'a, T: Debug + 'a>(r: &'a T) {
+    println!("{:?}", r);
+}
+
+// 例子：生命周期约束 —— 'a 必须比 'b 长
+fn pick<'a, 'b: 'a>(first: &'a str, second: &'b str) -> &'a str {
+    first  // 'a 是 'b 的子集，安全
+}
+```
+
+### 生命周期 + 泛型 + Trait（完整组合）
+
+```rust
+use std::fmt::Display;
+
+// 方式 1：where 子句（推荐，可读性最好）
+fn announce<'a, T>(x: &'a str, info: T) -> &'a str
+where
+    T: Display + 'a,          // T 实现 Display，且含有的引用 ≥ 'a
+{
+    println!("{}", info);
+    x
+}
+
+// 方式 2：直接写在尖括号里（简单场景）
+fn announce2<'a, T: Display + 'a>(x: &'a str, info: T) -> &'a str {
+    println!("{}", info);
+    x
+}
+```
+
+**组合速查：**
+
+| 写法 | 含义 | 常用场景 |
+|------|------|---------|
+| `<'a, T>` | 生命周期 `'a` + 泛型 `T` | 泛型函数返回引用 |
+| `T: 'a` | T 包含的引用都 ≥ `'a` | 保证 T 不包含悬垂引用 |
+| `T: Trait + 'a` | T 实现 Trait 且引用 ≥ `'a` | 泛型 + trait + 生命周期组合 |
+| `'a: 'b` | `'a` 至少和 `'b` 一样长 | 多生命周期约束 |
+| `where T: Display + 'a` | Where 子句形式 | 复杂约束时推荐 |
 
 ---
 
