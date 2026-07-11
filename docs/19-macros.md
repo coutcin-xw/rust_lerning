@@ -455,7 +455,7 @@ hello_example/
 [package]
 name = "hello_derive"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 proc-macro = true          # 标记为过程宏 crate
