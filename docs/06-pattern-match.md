@@ -16,6 +16,36 @@ Rust 的 `match` 与 C/Java 的 `switch` 有本质区别：它是**穷尽的**�
 
 > 💡 `match` 不仅是控制流——它是 Rust 中证明"所有情况都被处理了"的编译器验证工具。
 
+## 语法层：模式匹配的语法图谱
+
+Rust 的模式系统由几种语法形式构成，先看清全貌：
+
+```rust
+// 1. match：穷尽匹配，每分支 = 模式 => 表达式
+match value {
+    Pattern1 => expr1,
+    Pattern2 if guard => expr2,    // 守卫条件
+    _ => default_expr,             // 通配符
+}
+
+// 2. 模式类型（可以嵌套组合）
+//   字面量模式:    1 | 2                  // 或模式
+//   变量绑定:      x                      // 匹配任何值，绑定
+//   解构:          Some(x)                // 提取 Option 内部值
+//                  Point { x, y }         // 提取结构体字段
+//   范围:          1..=5                  // 匹配 1 到 5
+//   守卫:          x if x > 0            // 附加条件
+
+// 3. 其他使用模式的地方
+if let Pattern = expr { }          // 单分支 match
+while let Pattern = expr { }       // 循环 + 模式
+let (a, b) = pair;                 // let 解构
+fn foo((x, y): (i32, i32)) { }    // 函数参数解构
+for (i, v) in vec.iter().enumerate() { }  // for 循环
+```
+
+> 💡 Rust 中模式不是一个独立特性，而是**散布在多种语法位置中的统一机制**：`match`、`if let`、`let`、函数参数、`for` 循环——同一个模式语法处处可用。
+
 ## match —— Rust 最强大的控制流
 
 `match` 同时做两件事：**分支选择** + **值提取**。

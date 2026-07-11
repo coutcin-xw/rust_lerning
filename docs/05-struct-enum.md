@@ -14,6 +14,37 @@
 
 与 Java/C++ 等基于类的 OOP 不同，Rust 将**数据定义**（`struct`）与**行为实现**（`impl`）解耦，摒弃继承，仅用 trait 和组合复用代码。Rust 的枚举远不止整数标签：每个变体可携带不同类型的数据，构成**代数数据类型**（ADT），配合 `match` 穷尽匹配，一次性替代传统枚举、访问者模式和带标签联合体。`Option<T>` 便是最好例证——它只是普通枚举，并非语言内建机制，却彻底消除 null（"十亿美元错误"），由编译器强制检查值的存在性。
 
+## 语法层：struct / enum / impl 三件套
+
+本章所有代码由三种语法构成，先建立全景印象：
+
+```rust
+// 1. struct：定义数据结构（三种形式）
+struct Point(i32, i32);                      // 元组结构体
+struct User { name: String, age: u8 }        // 具名字段结构体
+struct Unit;                                  // 单元结构体（无字段）
+
+// 2. impl：为类型实现方法
+impl User {
+    fn new(name: &str, age: u8) -> Self {    // 关联函数（没有 self）
+        User { name: name.into(), age }
+    }
+    fn greet(&self) {                         // 方法（&self = 借用实例）
+        println!("我是 {}, {} 岁", self.name, self.age);
+    }
+}
+
+// 3. enum：定义"可能是多种情况之一"的类型
+enum Message {
+    Quit,                              // 无数据变体
+    Move { x: i32, y: i32 },          // 携带匿名结构体
+    Write(String),                     // 携带单个值
+    ChangeColor(u8, u8, u8),          // 携带多个值
+}
+```
+
+> 💡 `struct` 定义数据形状，`impl` 定义行为，`enum` 定义可能的情况。三者独立但组合使用——不设继承树，只有组合关系。
+
 ## 结构体——自定义数据形状
 
 结构体把相关数据组合在一起。Rust 有三种结构体形式。

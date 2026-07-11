@@ -53,6 +53,39 @@ fn largest<T: PartialOrd>(list: &[T]) -> &T { /* ... */ }
 
 > 💡 Rust 的 trait 是**组合优于继承**的典范。你可以为已有类型实现新 trait（在孤儿规则允许下），不修改原类型定义。这在你使用第三方库的类型时尤其强大。
 
+## 语法层：trait 与泛型的语法骨架
+
+本章引入四种核心语法，先建立全景：
+
+```rust
+// 1. trait 定义：声明一组方法签名
+trait Summary {
+    fn summarize(&self) -> String;           // 抽象方法（实现者必须提供）
+    fn default_method(&self) -> String {     // 默认实现（可选覆盖）
+        String::from("(默认)")
+    }
+}
+
+// 2. trait 实现：为具体类型实现 trait
+impl Summary for NewsArticle {
+    fn summarize(&self) -> String {          // 只需实现抽象方法
+        self.headline.clone()
+    }
+}
+
+// 3. 泛型与 trait bound：约束类型参数
+fn notify<T: Summary>(item: &T) { }          // 泛型写法
+fn notify(item: &impl Summary) { }           // impl Trait 语法糖
+fn notify<T>(item: &T) where T: Summary { }  // where 子句（复杂约束）
+
+// 4. dyn Trait：运行时多态
+fn render(components: &[Box<dyn Draw>]) {    // trait 对象，运行时虚表
+    for c in components { c.draw(); }
+}
+```
+
+> 💡 `trait` 定义"能做什么"，`impl Trait for Type` 告诉"谁可以"，`T: Trait` 限制"对谁使用"，`dyn Trait` 运行时找到"谁来做"。四种语法，一个问题：如何对不同类型的共性行为建模。
+
 ## Trait — 定义共享行为
 
 Trait 告诉编译器"实现了这个 trait 的类型必须提供这些方法"：
