@@ -177,9 +177,7 @@ impl Deserialize<'static> for OwnedType { ... }   // OwnedType 不借用，固�
 
 > 💡 trait 上的生命周期参数本质是"trait 的一个泛型维度"——和 `trait Foo<T>` 一样，`trait Bar<'a>` 允许 trait 的行为依赖于一个生命周期。`Sized` 约束（`trait Deserialize<'de>: Sized`）的含义见第 8 章的 Supertrait 小节。
 
-### impl 块中生命周期 + where（略）
-
-### impl 块中的生命周期 + where Self
+### impl 块中的生命周期 + where
 
 ```rust
 struct MyParser<'a, T> {

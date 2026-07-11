@@ -55,7 +55,7 @@ fn largest<T: PartialOrd>(list: &[T]) -> &T { /* ... */ }
 
 ## 语法层：trait 与泛型的语法骨架
 
-本章引入四种核心语法，先建立全景：
+本章所有代码由以下语法构成，先建立全景印象：
 
 ```rust
 // 1. trait 定义：声明一组方法签名
@@ -89,7 +89,7 @@ trait Printable: std::fmt::Display {          // 实现 Printable 必须先实�
 }
 
 // 6. trait 带生命周期参数 + Sized 约束
-pub trait Deserialize<'de>: Sized {           // ：Sized = supertrait
+pub trait Deserialize<'de>: Sized {              // : Sized = supertrait
     fn deserialize<D>(d: D) -> Result<Self, D::Error>;
 }
 // 等价 where 写法：
@@ -103,7 +103,7 @@ impl<T: Display> ToString for T {             // 任何实现了 Display 的类�
 }
 ```
 
-> 💡 `trait` 定义"能做什么"，`impl Trait for Type` 告诉"谁可以"，`T: Trait` 限制"对谁使用"，`dyn Trait` 运行时找到"谁来做"。四种语法，一个问题：如何对不同类型的共性行为建模。
+> 💡 `trait` 定义"能做什么"，`impl Trait for Type` 告诉"谁可以"，`T: Trait` 限制"对谁使用"，`dyn Trait` 运行时找到"谁来做"，`trait Foo: Bar` 要求实现链，`impl<T: Bound> Trait for T` 批量扩展。不同语法，同一个问题：如何对不同类型的共性行为建模。
 
 ## Trait — 定义共享行为
 
