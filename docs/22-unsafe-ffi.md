@@ -119,24 +119,93 @@ unsafe {
 }
 ```
 
-#### 读与写
+#### 写：`write()` vs `*p = val` — 不只是语法糖
+
+对于 `i32` 这类 Copy 类型，两者没有区别。但对于非 Copy 类型和未初始化内存，区别极大：
 
 ```rust
-let mut value = 42i32;
-let p: *mut i32 = &mut value;
+use std::alloc::{alloc, Layout};
 
 unsafe {
-    p.write(100);             // 写入（不调用 drop，直接覆盖）
-    let v = p.read();         // 读取值（不移动，产生一个副本）
-    println!("{}", v);        // 100
+    let ptr = alloc(Layout::new::<String>()) as *mut String;
 
-    // as_ref / as_mut：安全地转为引用（需保证指针有效）
-    let r: &i32 = p.as_ref().unwrap();  // Option<&T>
-    let r: &mut i32 = p.as_mut().unwrap();
+    // ❌ 错误！ptr 指向的内存是未初始化的，不能直接用 *ptr =
+    // Rust 的抽象机要求 *p = val 中的 *p 是一个"合法位置（place）"
+    // 合法位置要求内存已初始化 → 未定义行为
+    // *ptr = String::from("hello");
+
+    // ✅ 正确：write 不要求目标已初始化，直接覆盖字节
+    ptr.write(String::from("hello"));
 }
 ```
 
-> ⚠️ `.read()` 读取值时是"位级拷贝"——不调用 `Copy`/`Clone`，也不会 drop 原位置的值。如果 T 有 Drop 实现，你需要自己管理：先 `read` 走值，再用不可丢弃的值（如 `MaybeUninit::uninit()`）覆盖原位，或者后续处理所有权。
+| | `p.write(val)` | `*p = val` |
+|---|---|---|
+| 语义 | 直接覆盖字节，不关心原来有什么 | 赋值到 `*p` 这个位置 |
+| 要求目标已初始化？ | ❌ 不要求 | ⚠️ 要求（否则是 UB） |
+| 会 drop 旧值吗？ | ❌ 不会 | ❌ 不会（裸指针赋值也不 drop） |
+
+**规则：初始化未初始化内存时，必须用 `write`。**
+
+> ⚠️ `write` 也不自动 drop 旧值。如果 `*p` 原来持有一个 `String`，`p.write(new_string)` 会把旧 `String` 的字节直接覆盖——旧值的析构永远不会被调用，造成泄漏。此时应先用 `ptr::drop_in_place(p)` 手动析构旧值。
+
+#### 读：`read()` vs `*p` — Copy 和非 Copy 天差地别
+
+```rust
+// Copy 类型：read 和 *p 效果相同
+let mut x = 42i32;
+let p: *mut i32 = &mut x;
+unsafe {
+    let a = p.read();  // 位级拷贝 → 42
+    let b = *p;        // 也是位级拷贝 → 42
+}
+
+// 非 Copy 类型：*p 根本不能用！
+let mut s = String::from("hello");
+let p: *mut String = &mut s;
+unsafe {
+    // ❌ 编译错误：不能通过裸指针移动所有权
+    // let moved = *p;
+
+    // ✅ read 可以"移动"出来（你获得所有权）
+    let moved = p.read();
+    // 但原位置逻辑上已"空"——不能再被 drop
+    // s 也不能再使用（否则是 double-free）
+    // 你需要自己保证不 double-drop
+}
+```
+
+`read()` 的本质是 `memcpy`——位级拷贝。对 Copy 类型等价于 `*p`，对非 Copy 类型是**唯一能从裸指针取出所有权的方式**。
+
+> ⚠️ `read` 之后原位置逻辑上变成"未初始化"。如果你之后还要 drop 这个位置，必须先用 `write` 放一个新值进去，否则 double-free。
+
+#### `as_ref()` / `as_mut()` — 裸指针到安全引用的桥梁
+
+这是**从 unsafe 回到 safe 的跳板**：
+
+```rust
+let value = 42;
+let p: *const i32 = &value;
+
+// as_ref 返回 Option<&T>：空指针 → None，非空 → Some
+if let Some(r) = unsafe { p.as_ref() } {
+    // r 是安全的 &T，可以离开 unsafe 块正常使用
+    println!("{}", r);
+}
+```
+
+| | `*p` / `read()` / `write()` | `as_ref()` / `as_mut()` |
+|---|---|---|
+| 安全层级 | 始终在 `unsafe` 块内 | 得到安全的 `&T` / `&mut T`，可离开 unsafe |
+| 返回值 | 值本身 | 一个引用 |
+| 空指针 | 直接炸（segfault） | 返回 `None`（优雅处理） |
+| 非空但无效 | 炸 | 也炸——不检查有效性，只检查 null |
+
+```rust
+let p: *mut i32 = std::ptr::null_mut();
+assert!(unsafe { p.as_ref() }.is_none());  // ✅ 不崩
+// unsafe { *p };  // 💥 segfault
+```
 
 #### 替换与交换
 
