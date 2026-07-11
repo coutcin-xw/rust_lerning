@@ -244,7 +244,7 @@ greet_good("Bob");        // 字符串字面量直接是 &str
 // greet_bad("Bob");      // 编译错误！需要 &String
 ```
 
-这个转换是**自动的**——`String` 实现了 `Deref<Target=str>`，所以 `&String` 可以自动转换为 `&str`。这就是 Deref 强制转换（详见第 13 章）。
+这个转换是**自动的**——`String` 实现了 `Deref<Target=str>`，所以 `&String` 可以自动转换为 `&str`。这就是 Deref 强制转换（详见第 14 章）。
 
 ### 一个实际的切片例子
 

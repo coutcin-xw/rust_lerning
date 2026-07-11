@@ -1,4 +1,4 @@
-# 第 19 章：测试
+# 第 21 章：测试
 
 ## 学习目标
 
@@ -458,6 +458,83 @@ mod tests {
 - 临时文件的自动清理机制
 - AAA 模式
 
+### rstest — 基于 fixture 的参数化测试
+
+`rstest` 是 Rust 社区最流行的测试增强库之一，提供了 fixture（测试夹具）和参数化测试的支持。相比手写 helper 函数，它减少了样板代码；相比 proptest 的随机输入，它适合"多组已知输入输出验证同一逻辑"的场景。
+
+首先在 `Cargo.toml` 中添加依赖：
+
+```toml
+[dev-dependencies]
+rstest = "0.19"
+```
+
+用 `#[fixture]` 创建可复用的测试上下文。当测试函数参数名匹配某个 fixture 名时，rstest 会自动注入：
+
+```rust
+use rstest::rstest;
+
+#[fixture]
+fn user() -> User {
+    User { id: 1, name: "alice".into(), active: true }
+}
+
+#[rstest]
+fn test_user_is_active(user: User) {
+    assert!(user.active);
+}
+```
+
+`#[case]` 让同一个测试函数跑多组数据，每组生成独立的子测试——其中一组失败不影响其他组的定位：
+
+```rust
+#[rstest]
+#[case(1, 2, 3)]
+#[case(0, 0, 0)]
+#[case(-1, 1, 0)]
+fn test_add(#[case] a: i32, #[case] b: i32, #[case] expected: i32) {
+    assert_eq!(a + b, expected);
+}
+```
+
+fixture 和 case 可以组合使用，例如为每个测试用例注入同样的数据库连接夹具，打造出"参数化 + 共享上下文"的灵活测试编排。
+
+### criterion — 基准性能测试
+
+`criterion` 是 Rust 事实上的基准测试标准库，替代了 nightly 专属且功能有限的内置 `#[bench]`。它采用统计分析消除系统噪声，自动检测异常值，对比历史记录发现性能回归，还能生成 HTML 可视化报告。
+
+在 `Cargo.toml` 中配置：
+
+```toml
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "my_benchmark"
+harness = false
+```
+
+在 `benches/my_benchmark.rs` 中编写基准测试：
+
+```rust
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
+fn fibonacci(n: u64) -> u64 {
+    match n { 0 => 0, 1 => 1, _ => fibonacci(n - 1) + fibonacci(n - 2) }
+}
+
+fn bench_fib(c: &mut Criterion) {
+    c.bench_function("fib 20", |b| b.iter(|| fibonacci(black_box(20))));
+}
+
+criterion_group!(benches, bench_fib);
+criterion_main!(benches);
+```
+
+运行 `cargo bench` 即可执行。输出包含每次迭代的平均时间、标准差、相对上次运行的变化百分比。`black_box` 告诉编译器"这段代码的结果外部可见"，防止优化器把被测函数直接消除掉。
+
+开启 `html_reports` feature 后，criterion 会在 `target/criterion/` 下生成详细的 HTML 报告，包括抖动分布图、性能变化趋势等，非常适合在 CI 中跟踪性能曲线的长期变化。
+
 ## 练习
 
 1. 为一个计算器库写完整的单元测试（加减乘除 + 除零 + 溢出）
@@ -468,4 +545,4 @@ mod tests {
 
 ---
 
-← [第 18 章：标准库集合](./18-collections.md) | [返回目录](./README.md) | → [第 20 章：unsafe Rust 与 FFI](./20-unsafe-ffi.md)
+← [第 20 章：标准库集合](./20-collections.md) | [返回目录](./README.md) | → [第 22 章：unsafe Rust 与 FFI](./22-unsafe-ffi.md)

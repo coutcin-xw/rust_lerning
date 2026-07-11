@@ -1,4 +1,4 @@
-# 第 11 章：迭代器
+# 第 12 章：迭代器
 
 ## 学习目标
 
@@ -246,4 +246,4 @@ let running_sum: Vec<i32> = (1..=5)
 
 ---
 
-← [第 10 章：闭包](./10-closures.md) | [返回目录](./README.md) | → [第 12 章：并发编程](./12-concurrency.md)
+← [第 11 章：闭包](./11-closures.md) | [返回目录](./README.md) | → [第 13 章：并发编程](./13-concurrency.md)

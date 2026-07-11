@@ -1,4 +1,4 @@
-# 第 13 章：智能指针
+# 第 14 章：智能指针
 
 ## 学习目标
 
@@ -282,4 +282,4 @@ let s2 = maybe_modify("hello world");    // Cow::Owned（分配了新 String）
 
 ---
 
-← [第 12 章：并发编程](./12-concurrency.md) | [返回目录](./README.md) | → [第 14 章：异步编程](./14-async-await.md)
+← [第 13 章：并发编程](./13-concurrency.md) | [返回目录](./README.md) | → [第 15 章：异步编程](./15-async-await.md)

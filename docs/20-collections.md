@@ -1,4 +1,4 @@
-# 第 18 章：标准库集合
+# 第 20 章：标准库集合
 
 ## 学习目标
 
@@ -112,6 +112,43 @@ for (key, value) in &scores { }             // 顺序不确定！
 
 > ⚠️ HashMap 的迭代顺序是**不确定的**。需要有序用 `BTreeMap`。
 
+### Entry API 进阶
+
+```rust
+use std::collections::hash_map::Entry;
+
+// or_insert_with：惰性计算默认值（只在 key 不存在时调用闭包）
+map.entry("expensive")
+    .or_insert_with(|| {
+        println!("计算默认值...");  // 只在 key 不存在时打印
+        compute_default()
+    });
+
+// or_default：用 Default::default() 作为默认值
+let mut counters: HashMap<&str, Vec<u32>> = HashMap::new();
+counters.entry("events").or_default().push(42);
+
+// occupied / vacant 手动分流
+match map.entry("b") {
+    Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+    Entry::Vacant(entry) => { entry.insert(42); }
+}
+```
+
+> 💡 `or_insert_with` 优于 `or_insert(compute_default())`——前者只在 key 不存在时才调用函数，后者不管存不存在都先求值。
+
+### 哈希函数与性能
+
+`HashMap` 默认使用 `SipHash`（防 HashDoS 攻击的安全哈希）。在对安全性要求不高的场景，可切换到更快的哈希器：
+
+```rust
+// Cargo.toml: rustc-hash = "2"
+use rustc_hash::FxHashMap;
+
+let mut map: FxHashMap<&str, u32> = FxHashMap::default();
+// 比标准 HashMap 快 2-3 倍，但不防 HashDoS
+```
+
 ### HashMap vs BTreeMap
 
 | | `HashMap` | `BTreeMap` |
@@ -218,6 +255,36 @@ set.insert("banana");
 set.contains("apple");  // true
 ```
 
+## 集合选型决策
+
+按你的需求找到最合适的集合：
+
+```
+需要  键值对 ？
+├── 是 → 需要有序遍历？
+│   ├── 是 → BTreeMap
+│   └── 否 → HashMap（考虑 FxHashMap 提速）
+│
+├── 只需要值（去重）？
+│   ├── 是 → 需要有序？
+│   │   ├── 是 → BTreeSet
+│   │   └── 否 → HashSet
+│   │
+│   └── 需要队列顺序 → VecDeque
+│
+├── 需要优先级（最大/最小先出）→ BinaryHeap
+│
+├── 需要头尾双端操作 → VecDeque
+│
+└── 只需要动态数组 → Vec<T>（首选）
+```
+
+**性能口诀：**
+- 90% 的场景用 `Vec`，键值访问用 `HashMap`
+- 需要排序遍历用 `BTreeMap`/`BTreeSet`
+- 头尾操作用 `VecDeque`（别用 `LinkedList`）
+- 优先级队列用 `BinaryHeap`
+
 ## 练习
 
 1. 统计一段文本中每个单词的出现次数（忽略大小写），用 HashMap 存储，按频次降序输出
@@ -226,4 +293,4 @@ set.contains("apple");  // true
 
 ---
 
-← [第 17 章：宏](./17-macros.md) | [返回目录](./README.md) | → [第 19 章：测试](./19-testing.md)
+← [第 19 章：宏](./19-macros.md) | [返回目录](./README.md) | → [第 21 章：测试](./21-testing.md)

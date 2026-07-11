@@ -279,6 +279,103 @@ fn main() {
 | 程序崩溃 | `panic!`（恢复用 catch_unwind） | `panic` | unchecked exception | 未处理异常 |
 | 编译器强制检查 | ✅（match 穷尽性） | ❌ | ❌（checked exception 除外） | ❌ |
 
+### anyhow — 应用级错误处理
+
+`anyhow` 是一个面向**应用程序**的错误处理库，而 `thiserror` 更适合**库**代码：
+
+| 场景 | 用什么 | 理由 |
+|------|--------|------|
+| 库代码 | `thiserror` | 定义明确错误类型，让调用者匹配处理 |
+| 应用程序 | `anyhow` | 不需要区分错误类型，只需传播和报告 |
+
+#### `anyhow::Result<T>`
+
+`anyhow::Result<T>` 等价于 `Result<T, anyhow::Error>`，`anyhow::Error` 可以包装任何实现了 `Display + Debug + Send + Sync + 'static` 的错误类型：
+
+```rust
+use anyhow::Result;
+
+fn load_data() -> Result<String> {
+    let content = std::fs::read_to_string("data.txt")?;  // io::Error 自动包装
+    let value: i32 = content.trim().parse()?;             // ParseIntError 自动包装
+    Ok(format!("读取值: {}", value))
+}
+```
+
+不需要定义自定义错误类型，不需要实现 `From`——任何标准错误都能通过 `?` 传播为 `anyhow::Error`。
+
+#### `bail!` 宏
+
+`bail!` 在遇到错误条件时**立即返回**一个带描述的错误，等价于 `return Err(anyhow!(...))`：
+
+```rust
+use anyhow::bail;
+
+fn validate_input(age: i32) -> Result<()> {
+    if age < 0 {
+        bail!("年龄不能为负数: {}", age);
+    }
+    if age > 150 {
+        bail!("年龄超出范围: {}", age);
+    }
+    Ok(())
+}
+```
+
+#### `.context()` 方法
+
+`.context()` 为错误**附加额外上下文**，方便定位问题来源：
+
+```rust
+use anyhow::Context;
+
+fn load_config() -> Result<String> {
+    let config_path = "/etc/app/config.toml";
+
+    let content = std::fs::read_to_string(config_path)
+        .with_context(|| format!("无法读取配置文件: {}", config_path))?;
+
+    Ok(content)
+}
+```
+
+`with_context` 接受一个闭包，只在发生错误时才执行（惰性求值），避免无错误时的字符串分配开销。
+
+#### 综合示例
+
+```rust
+use anyhow::{bail, Context, Result};
+
+struct AppConfig {
+    port: u16,
+}
+
+fn load_config() -> Result<AppConfig> {
+    let content = std::fs::read_to_string("config.toml")
+        .with_context(|| "无法读取 config.toml")?;
+
+    let config: toml::Value = toml::from_str(&content)
+        .with_context(|| "无法解析 config.toml，请检查格式")?;
+
+    let port_str = config.get("port")
+        .and_then(|v| v.as_str())
+        .unwrap_or("8080");
+    let port: u16 = port_str.parse()
+        .with_context(|| format!("端口号格式错误: {}", port_str))?;
+
+    if port < 1024 {
+        bail!("端口号 {} 小于 1024，需要 root 权限", port);
+    }
+    if port > 65535 {
+        bail!("端口号 {} 超出有效范围", port);
+    }
+
+    Ok(AppConfig { port })
+}
+```
+
+`anyhow` 让你专注于业务逻辑，而不用花时间定义和维护错误类型，适合大多数应用场景。
+
 ## 练习
 
 1. 写一个函数，从文件读取内容，解析为数字，返回 `Result<i32, AppError>`。使用自定义错误类型和 `?` 操作符

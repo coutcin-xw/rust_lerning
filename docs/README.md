@@ -13,13 +13,13 @@
 │  第一阶段：基础语法（第 1-6 章）                           │
 │  入门必读，建立 Rust 心智模型                              │
 ├─────────────────────────────────────────────────────────┤
-│  第二阶段：核心特性（第 7-11 章）                          │
+│  第二阶段：核心特性（第 7-12 章）                          │
 │  Rust 的精华所在，理解后能写出地道的 Rust 代码              │
 ├─────────────────────────────────────────────────────────┤
-│  第三阶段：高级主题（第 12-16 章）                         │
+│  第三阶段：高级主题（第 13-19 章）                         │
 │  进阶必备，覆盖并发、异步、宏等                             │
 ├─────────────────────────────────────────────────────────┤
-│  第四阶段：实战补充（第 17-19 章）                         │
+│  第四阶段：实战补充（第 20-22 章）                         │
 │  标准库集合、测试、unsafe/FFI                             │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -49,28 +49,30 @@
 |------|------|--------|
 | [第 7 章：错误处理](./07-error-handling.md) | Result\<T,E\>、? 操作符、自定义错误 | ⭐⭐⭐⭐ |
 | [第 8 章：Trait 与泛型](./08-trait-generics.md) | Trait 定义、泛型、trait bound、RPIT | ⭐⭐⭐⭐⭐ |
-| [第 9 章：生命周期](./09-lifetime.md) | 生命周期标注、省略规则、RPIT 捕获 | ⭐⭐⭐⭐⭐ |
-| [第 10 章：闭包](./10-closures.md) | 闭包语法、Fn 系列 trait、async closures | ⭐⭐⭐⭐ |
-| [第 11 章：迭代器](./11-iterators.md) | Iterator trait、适配器、消费者 | ⭐⭐⭐⭐ |
+| [第 9 章：类型转换与运算符重载](./09-type-conversions.md) | From/Into、TryFrom、AsRef、运算符重载 | ⭐⭐⭐ |
+| [第 10 章：生命周期](./10-lifetime.md) | 生命周期标注、省略规则、RPIT 捕获 | ⭐⭐⭐⭐⭐ |
+| [第 11 章：闭包](./11-closures.md) | 闭包语法、Fn 系列 trait、async closures | ⭐⭐⭐⭐ |
+| [第 12 章：迭代器](./12-iterators.md) | Iterator trait、适配器、消费者 | ⭐⭐⭐⭐ |
 
 ### 第三阶段：高级主题
 
 | 章节 | 内容 | 重要度 |
 |------|------|--------|
-| [第 12 章：并发编程](./12-concurrency.md) | 线程、消息传递、Mutex、Arc、Send/Sync | ⭐⭐⭐⭐ |
-| [第 13 章：智能指针](./13-smart-pointers.md) | Box/Rc/Arc/Cell/RefCell/Deref/Drop | ⭐⭐⭐⭐ |
-| [第 14 章：异步编程](./14-async-await.md) | async/await、Future trait、async fn in traits | ⭐⭐⭐⭐⭐ |
-| [第 15 章：模块系统](./15-modules.md) | mod、pub、use、package/crate/module 概念 | ⭐⭐⭐⭐ |
-| [第 16 章：项目工程化](./16-project-engineering.md) | 条件编译、feature、workspace、属性、文档 | ⭐⭐⭐⭐ |
-| [第 17 章：宏](./17-macros.md) | 声明式宏、过程宏简介 | ⭐⭐⭐ |
+| [第 13 章：并发编程](./13-concurrency.md) | 线程、消息传递、Mutex、Arc、Send/Sync | ⭐⭐⭐⭐ |
+| [第 14 章：智能指针](./14-smart-pointers.md) | Box/Rc/Arc/Cell/RefCell/Deref/Drop | ⭐⭐⭐⭐ |
+| [第 15 章：异步编程](./15-async-await.md) | async/await、Future trait、async fn in traits | ⭐⭐⭐⭐⭐ |
+| [第 16 章：模块系统](./16-modules.md) | mod、pub、use、package/crate/module 概念 | ⭐⭐⭐⭐ |
+| [第 17 章：Cargo 进阶](./17-cargo-advanced.md) | 条件编译、feature、workspace | ⭐⭐⭐⭐ |
+| [第 18 章：属性与文档](./18-attributes-docs.md) | 属性、lint、文档注释、cargo doc | ⭐⭐⭐ |
+| [第 19 章：宏](./19-macros.md) | 声明式宏、过程宏简介 | ⭐⭐⭐ |
 
 ### 第四阶段：实战补充
 
 | 章节 | 内容 | 重要度 |
 |------|------|--------|
-| [第 18 章：标准库集合](./18-collections.md) | Vec、HashMap、String 等集合类型 | ⭐⭐⭐⭐ |
-| [第 19 章：测试](./19-testing.md) | 单元测试、集成测试、文档测试 | ⭐⭐⭐⭐ |
-| [第 20 章：unsafe Rust 与 FFI](./20-unsafe-ffi.md) | unsafe 块、原始指针、FFI | ⭐⭐⭐ |
+| [第 20 章：标准库集合](./20-collections.md) | Vec、HashMap、String 等集合类型 | ⭐⭐⭐⭐ |
+| [第 21 章：测试](./21-testing.md) | 单元测试、集成测试、文档测试 | ⭐⭐⭐⭐ |
+| [第 22 章：unsafe Rust 与 FFI](./22-unsafe-ffi.md) | unsafe 块、原始指针、FFI | ⭐⭐⭐ |
 
 ### 附录
 
@@ -84,7 +86,7 @@
 
 - **有其他语言经验**（C/Java/Python/Go/JS）：从[第 1 章](./01-getting-started.md)开始顺序阅读，前 6 章帮你建立 Rust 独有的心智模型
 - **编程初学者**：放慢节奏，每章敲一遍代码示例，前 3 章多花时间理解所有权
-- **需要快速上手项目**：精读第 2-9 章（基础+核心），然后按需查阅后续章节
+- **需要快速上手项目**：精读第 2-10 章（基础+核心），然后按需查阅后续章节
 
 ## 🔧 配套代码
 

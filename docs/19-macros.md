@@ -1,4 +1,4 @@
-# 第 17 章：宏
+# 第 19 章：宏
 
 ## 学习目标
 
@@ -403,7 +403,7 @@ println!("{}", s);  // Active
 
 ## 过程宏简介
 
-过程宏需要**单独的 proc-macro crate**（`Cargo.toml` 中 `[lib] proc-macro = true`）：
+> 过程宏有一个**硬性要求**：必须放在独立的 proc-macro crate 中。这意味着你不能直接在 `main.rs` 或 `lib.rs` 里写过程宏——必须在另一个 crate 中定义，然后在主 crate 中引用。这是 Rust 编译器施加的限制。
 
 ### 三种类型
 
@@ -413,22 +413,151 @@ println!("{}", s);  // Active
 | **属性宏** | `#[tokio::main]` | tokio, rocket |
 | **函数式宏** | `sql!("SELECT ...")` | 自定义 DSL |
 
-派生宏示例（生成 trait 实现）：
+属性宏和函数式宏较为进阶，本书只展开最常见的派生宏。
+
+### derive 宏实战
+
+下面实现一个 `Hello` 派生宏：给结构体添加 `hello()` 方法，打印结构体的名字。
+
+#### 项目结构
+
+```
+hello_example/
+├── hello_derive/        # proc-macro crate（库）
+│   ├── Cargo.toml
+│   └── src/lib.rs
+└── hello_main/          # 普通 crate（使用宏的二进制项目）
+    ├── Cargo.toml
+    └── src/main.rs
+```
+
+#### 第 1 步：创建 proc-macro crate
+
+`hello_derive/Cargo.toml`：
+
+```toml
+[package]
+name = "hello_derive"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true          # 标记为过程宏 crate
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+```
+
+`hello_derive/src/lib.rs`：
+
 ```rust
 use proc_macro::TokenStream;
+use quote::quote;
+use syn::{parse_macro_input, DeriveInput};
 
 #[proc_macro_derive(Hello)]
 pub fn hello_derive(input: TokenStream) -> TokenStream {
-    let output = quote! {
-        impl Hello for #input_type {
-            fn hello() { println!("Hello from derive macro!"); }
+    // 把输入解析为 AST
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;  // 结构体的名字
+
+    // 用 quote! 生成代码
+    let expanded = quote! {
+        impl #name {
+            pub fn hello() {
+                println!("你好！我是 {}", stringify!(#name));
+            }
         }
     };
-    output.into()
+
+    // 把 proc_macro2::TokenStream 转回 proc_macro::TokenStream
+    expanded.into()
 }
 ```
 
-过程宏超出了本书范畴。如果你想深入了解，推荐阅读 dtolnay 的源码（如 `serde`, `thiserror`）。
+> `syn` 负责把输入 token 流解析成结构化 AST，`quote!` 用类似声明式宏的语法生成输出代码，`proc_macro2` 是跨平台的中间层。
+
+#### 第 2 步：在主 crate 中使用
+
+`hello_main/Cargo.toml`：
+
+```toml
+[package]
+name = "hello_main"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hello_derive = { path = "../hello_derive" }
+```
+
+`hello_main/src/main.rs`：
+
+```rust
+use hello_derive::Hello;
+
+#[derive(Hello)]
+struct Dog;
+
+#[derive(Hello)]
+struct Cat;
+
+fn main() {
+    Dog::hello();   // 输出：你好！我是 Dog
+    Cat::hello();   // 输出：你好！我是 Cat
+}
+```
+
+#### 运行
+
+```bash
+cd hello_main && cargo run
+```
+
+#### 发生了什么？
+
+`#[derive(Hello)]` 告诉编译器："用 `hello_derive` 函数处理这个结构体的 token 流"。`hello_derive` 函数：
+1. 接收 `TokenStream`（原始 token 序列）
+2. 用 `syn` 解析出结构体名
+3. 用 `quote!` 拼出 `impl` 块代码
+4. 返回生成的 token 流，编译器把它"缝合"到原代码中
+
+展开后等价于：
+
+```rust
+struct Dog;
+impl Dog {
+    pub fn hello() {
+        println!("你好！我是 Dog");
+    }
+}
+```
+
+#### 关键概念：为什么必须是独立 crate？
+
+编译器先编译 proc-macro crate（生成动态库），然后在编译依赖它的 crate 时**加载并执行**这个过程宏。这是两阶段编译——宏代码和被它处理的代码不可能在同一个编译单元中。
+
+### 另两种过程宏速览
+
+**属性宏** (`#[my_attr]`)：修饰任意条目（函数、结构体、模块等），可以读取并替换整个条目：
+
+```rust
+// 用法：#[my_attr] fn foo() {}
+// 实现：#[proc_macro_attribute]
+// pub fn my_attr(attr: TokenStream, item: TokenStream) -> TokenStream
+```
+
+**函数式宏** (`my_macro!()`)：像声明式宏一样调用，但用 Rust 代码处理 token 流：
+
+```rust
+// 用法：my_macro!(some custom syntax here)
+// 实现：#[proc_macro]
+// pub fn my_macro(input: TokenStream) -> TokenStream
+```
+
+过程宏的能力远超声明式宏，但成本也更高——学习曲线、编译时间、维护复杂度。先用声明式宏解决问题，有明确需求（如 `#[derive]`）再引入过程宏。
 
 ## 练习
 
@@ -439,4 +568,4 @@ pub fn hello_derive(input: TokenStream) -> TokenStream {
 
 ---
 
-← [第 16 章：项目工程化](./16-project-engineering.md) | [返回目录](./README.md) | → [第 18 章：标准库集合](./18-collections.md)
+← [第 18 章：属性与文档](./18-attributes-docs.md) | [返回目录](./README.md) | → [第 20 章：标准库集合](./20-collections.md)

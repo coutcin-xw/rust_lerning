@@ -1,4 +1,4 @@
-# 第 10 章：闭包
+# 第 11 章：闭包
 
 ## 学习目标
 
@@ -112,6 +112,39 @@ let mut f = || { count += 1; count };  // 隐式 FnMut
 let s = String::from("hello");
 let f = || drop(s);  // 隐式 FnOnce
 ```
+
+### AsyncFn / AsyncFnMut / AsyncFnOnce
+
+Rust 2024 Edition 引入了异步闭包的 trait 体系，与同步版本完全对应：
+
+```
+AsyncFnOnce  ←  AsyncFnMut  ←  AsyncFn
+(调用1次)       (可改)         (只读)
+```
+
+| Trait | 捕获方式 | 可调用次数 | 对应同步 trait |
+|-------|---------|-----------|---------------|
+| `AsyncFnOnce` | 获取所有权 | 至少一次 | `FnOnce` |
+| `AsyncFnMut` | 可变借用 | 多次 | `FnMut` |
+| `AsyncFn` | 不可变借用 | 多次 | `Fn` |
+
+异步闭包使用 `async || { ... }` 语法，返回一个 `Future`：
+
+```rust
+use std::future::Future;
+
+// 异步闭包，不可变捕获
+let factor = 10;
+let async_calc = async |x: i32| -> i32 {
+    // 模拟异步操作
+    x * factor
+};
+// async_calc 实现了 AsyncFn(i32) -> i32
+// 调用返回 impl Future<Output = i32>
+let fut: impl Future<Output = i32> = async_calc(5);
+```
+
+> 💡 异步闭包在 Rust 1.85.0 稳定，需使用 2024 Edition。调用异步闭包不会立即执行——它返回一个 `Future`，需要 `.await` 或传递给执行器。
 
 ## 闭包作为参数
 
@@ -232,6 +265,44 @@ let f: fn(i32) -> i32 = |x| x + 1;  // 可以强制为函数指针
 
 > ⚠️ **闭包类型不兼容。** 即使两个闭包有相同签名，类型也不同。需要统一类型时用 `Box<dyn Fn>` 或函数指针。
 
+### Cacher 备忘录模式
+
+> 📘 *这是 《Rust 程序设计语言》中的经典闭包模式——用结构体持有闭包和缓存结果。*
+
+```rust
+use std::collections::HashMap;
+
+// 泛型 T 表示闭包的计算结果类型
+struct Cacher<T>
+where
+    T: Fn(u32) -> u32,  // 闭包 trait 约束
+{
+    calculation: T,
+    value: HashMap<u32, u32>,  // 缓存多个输入对应的结果
+}
+
+impl<T> Cacher<T>
+where
+    T: Fn(u32) -> u32,
+{
+    fn new(calculation: T) -> Cacher<T> {
+        Cacher {
+            calculation,
+            value: HashMap::new(),
+        }
+    }
+
+    fn value(&mut self, arg: u32) -> u32 {
+        // 如果已有缓存，直接返回；否则计算并缓存
+        *self.value.entry(arg).or_insert_with(|| {
+            (self.calculation)(arg)
+        })
+    }
+}
+```
+
+> 💡 `value` 字段的类型必须与闭包的返回类型一致（这里都是 `u32`），否则缓存无法存储计算结果。如果闭包返回不同类型，需将泛型拆分为两个类型参数。
+
 ## 练习
 
 1. 用 `sort_by_key` + 闭包对一个 `Vec<(String, u32)>` 按数字降序排列
@@ -241,4 +312,4 @@ let f: fn(i32) -> i32 = |x| x + 1;  // 可以强制为函数指针
 
 ---
 
-← [第 9 章：生命周期](./09-lifetime.md) | [返回目录](./README.md) | → [第 11 章：迭代器](./11-iterators.md)
+← [第 10 章：生命周期](./10-lifetime.md) | [返回目录](./README.md) | → [第 12 章：迭代器](./12-iterators.md)

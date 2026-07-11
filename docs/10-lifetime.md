@@ -1,4 +1,4 @@
-# 第 9 章：生命周期
+# 第 10 章：生命周期
 
 ## 学习目标
 
@@ -134,6 +134,129 @@ fn spawn_task() {
 // move 闭包把所有权转移进去，所以满足了 'static 约束
 ```
 
+## 多个生命周期参数
+
+当多个引用有不同的生命周期约束时，需要多个标注：
+
+```rust
+// 结构体包含两个不同生命周期的引用
+struct Context<'a, 'b> {
+    config: &'a str,   // config 可能来自全局配置，生命周期较长
+    request: &'b str,   // request 可能来自网络，生命周期较短
+}
+
+impl<'a, 'b> Context<'a, 'b> {
+    fn new(config: &'a str, request: &'b str) -> Self {
+        Context { config, request }
+    }
+
+    fn config(&self) -> &'a str { self.config }
+    fn request(&self) -> &'b str { self.request }
+}
+
+// 函数返回不同生命周期的引用
+fn first_word<'a, 'b>(full: &'a str, delimiter: &'b str) -> &'a str {
+    // 返回值只和 full 的生命周期有关，和 delimiter 无关
+    full.split(delimiter).next().unwrap_or(full)
+}
+// 标注 'a 和 'b 分别，编译器不会把返回值的生命周期限制为 &delimiter
+```
+
+> 💡 不需要的生命周期参数不要加——`first_word` 其实可以省略 `'b`（规则 1 自动处理），这里显式标出只是为了展示语法。
+
+## `dyn Trait + 'a` — trait 对象上的生命周期
+
+trait 对象有默认的生命周期推断，但有时需要显式标注：
+
+```rust
+trait Draw { fn draw(&self); }
+
+// 默认情况：Box<dyn Draw> 等价于 Box<dyn Draw + 'static>
+// 意味着被包装的值不能包含非 'static 的引用
+
+struct View<'a> {
+    label: &'a str,
+}
+
+impl<'a> Draw for View<'a> {
+    fn draw(&self) { println!("视图: {}", self.label); }
+}
+
+fn main() {
+    let name = String::from("主界面");
+
+    // ❌ 错误：View<'_> 包含非 'static 引用，不能放入 Box<dyn Draw>
+    // let v: Box<dyn Draw> = Box::new(View { label: &name });
+
+    // ✅ 显式标注生命周期：允许包装包含 'a 引用的类型
+    let v: Box<dyn Draw + '_> = Box::new(View { label: &name });
+    v.draw();
+}
+```
+
+生命周期标注规则：
+- `Box<dyn Trait>` 默认 `Box<dyn Trait + 'static>`（trait 对象本身不含非 static 引用）
+- `Box<dyn Trait + 'a>` 允许 trait 对象包含生命周期不短于 `'a` 的引用
+- `Box<dyn Trait + '_>` 是常用简写——编译器自动推断最短可行的生命周期
+
+## 常见生命周期错误及修复
+
+### 错误 1：返回局部变量的引用
+
+```rust,ignore
+fn bad() -> &str {
+    let s = String::from("hello");
+    &s  // ❌ s 在函数结束时被释放
+}
+```
+
+**修复：返回所有权（返回 `String` 而不是 `&str`）**
+
+### 错误 2：借用和可变借用混淆
+
+```rust,ignore
+fn modify_and_read(v: &mut Vec<i32>) -> &i32 {
+    v.push(42);
+    &v[0]  // ❌ 可变借用 v 和不可变借用 &v[0] 冲突？其实可以
+}
+// 这个在 NLL 下其实是 OK 的——编译器能看出 push 不需要保留可变借用
+// 真正的坑是：
+fn bad() {
+    let mut v = vec![1, 2, 3];
+    let r = &mut v;
+    r.push(4);
+    println!("{}", v[0]);  // ❌ 可变借用 r 和不可变借用 v 冲突
+    // 即使 r 没有再被使用，编译器有时还是保守（尤其在 2021 Edition）
+}
+```
+
+### 错误 3：结构体引用比数据活得久
+
+```rust,ignore
+struct Holder<'a> {
+    data: &'a str,
+}
+
+fn create_holder() -> Holder {
+    let s = String::from("data");
+    Holder { data: &s }  // ❌ s 在函数结束时释放，Holder.data 悬垂
+}
+```
+
+**修复：让结构体持有所有权（用 `String` 而非 `&str`）**
+
+### 错误 4：trait 对象生命周期不匹配
+
+```rust,ignore
+fn make_view<'a>(label: &'a str) -> Box<dyn Draw> {
+    Box::new(View { label })  // ❌ View<'a> 不满足 dyn Draw 的 'static 要求
+}
+
+fn make_view<'a>(label: &'a str) -> Box<dyn Draw + 'a> {
+    Box::new(View { label })  // ✅
+}
+```
+
 ## 泛型 + Trait Bound + 生命周期的组合
 
 ```rust
@@ -222,4 +345,4 @@ fn return_ref() -> &str {
 
 ---
 
-← [第 8 章：Trait 与泛型](./08-trait-generics.md) | [返回目录](./README.md) | → [第 10 章：闭包](./10-closures.md)
+← [第 9 章：类型转换与运算符重载](./09-type-conversions.md) | [返回目录](./README.md) | → [第 11 章：闭包](./11-closures.md)

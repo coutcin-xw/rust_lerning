@@ -49,17 +49,17 @@ Rust 2024 Edition 于 **2025 年 2 月随 Rust 1.85.0 稳定发布**，是迄今
 | 特性 | 说明 | 影响的章节 |
 |------|------|-----------|
 | **let chains** | `if let A && let B { }`，链式模式匹配 | 第 6 章 |
-| **RPIT 生命周期自动捕获** | `impl Trait` 返回值自动捕获所有生命周期 | 第 8、9 章 |
+| **RPIT 生命周期自动捕获** | `impl Trait` 返回值自动捕获所有生命周期 | 第 8、10 章 |
 | **`use<..>` 精确捕获** | 手动控制 `impl Trait` 捕获哪些泛型参数 | 第 8 章 |
-| **unsafe extern 块** | `extern` 块必须加 `unsafe` 关键字 | 第 19 章 |
-| **unsafe 属性** | `#[no_mangle]` 等改为 `#[unsafe(no_mangle)]` | 第 19 章 |
-| **unsafe_op_in_unsafe_fn** | unsafe fn 内部也需要显式 `unsafe {}` | 第 19 章 |
-| **Future/IntoFuture 入 prelude** | 不再需要手动 import Future | 第 14 章 |
-| **async closures** | `async \|x\| { }` 语法 | 第 10 章 |
-| **async fn in traits** | trait 中可以定义 async 方法 | 第 14 章 |
+| **unsafe extern 块** | `extern` 块必须加 `unsafe` 关键字 | 第 22 章 |
+| **unsafe 属性** | `#[no_mangle]` 等改为 `#[unsafe(no_mangle)]` | 第 22 章 |
+| **unsafe_op_in_unsafe_fn** | unsafe fn 内部也需要显式 `unsafe {}` | 第 22 章 |
+| **Future/IntoFuture 入 prelude** | 不再需要手动 import Future | 第 15 章 |
+| **async closures** | `async \|x\| { }` 语法 | 第 11 章 |
+| **async fn in traits** | trait 中可以定义 async 方法 | 第 15 章 |
 | **尾表达式作用域优化** | 临时值在局部变量之前释放 | 第 3、4 章 |
-| **禁止 static mut 引用** | 改用 `&raw mut` 获取原始指针 | 第 19 章 |
-| **宏 fragment 变更** | `expr` 也匹配 `const { }`，缺少 specifier 是硬错误 | 第 16 章 |
+| **禁止 static mut 引用** | 改用 `&raw mut` 获取原始指针 | 第 22 章 |
+| **宏 fragment 变更** | `expr` 也匹配 `const { }`，缺少 specifier 是硬错误 | 第 19 章 |
 
 ### 版本要求
 
@@ -87,29 +87,27 @@ rustup update
 ├── 第5章  结构体与枚举 — 自定义类型
 └── 第6章  模式匹配 — Rust 的控制流利器
 
-第二阶段：核心特性（第 7-11 章）
+第二阶段：核心特性（第 7-12 章）
 ├── 第7章  错误处理 — Result、? 操作符
 ├── 第8章  Trait 与泛型 — 抽象与复用 ⭐
-├── 第9章  生命周期 — 引用关系的精确描述 ⭐
-├── 第10章 闭包 — 捕获环境的匿名函数
-└── 第11章 迭代器 — 惰性数据管道
+├── 第9章  类型转换 — From/Into/运算符重载
+├── 第10章 生命周期 — 引用关系的精确描述 ⭐
+├── 第11章 闭包 — 捕获环境的匿名函数
+└── 第12章 迭代器 — 惰性数据管道
 
-第三阶段：高级主题（第 12-16 章）
-├── 第12章 并发编程 — 线程、消息、共享状态
-├── 第13章 智能指针 — Box/Rc/Arc/RefCell
-├── 第14章 异步编程 — async/await、Future
-├── 第15章 模块系统 — 代码组织
-└── 第16章 宏 — 元编程
+第三阶段：高级主题（第 13-19 章）
+├── 第13章 并发编程 — 线程、消息、共享状态
+├── 第14章 智能指针 — Box/Rc/Arc/RefCell
+├── 第15章 异步编程 — async/await、Future
+├── 第16章 模块系统 — 代码组织
+├── 第17章 Cargo 进阶 — 条件编译、feature、workspace
+├── 第18章 属性与文档 — 属性、lint、cargo doc
+└── 第19章 宏 — 元编程
 
-第四阶段：实战补充（第 17-19 章）
-├── 第17章 标准库集合 — Vec/HashMap/String
-├── 第18章 测试 — 单元测试、集成测试、文档测试
-└── 第19章 unsafe Rust 与 FFI — 底层操作和 C 交互
-
-附录
-├── A 工具链 — Cargo/rustup/clippy/rustfmt 进阶
-├── B 学习资源 — 官方文档、社区、推荐阅读
-└── C 速查表 — 常用语法和模式快速参考
+第四阶段：实战补充（第 20-22 章）
+├── 第20章 标准库集合 — Vec/HashMap/String
+├── 第21章 测试 — 单元测试、集成测试、文档测试
+└── 第22章 unsafe Rust 与 FFI — 底层操作和 C 交互
 ```
 
 ⭐ 标记的章节是 Rust 独有的核心概念，建议多花时间反复阅读和实践。

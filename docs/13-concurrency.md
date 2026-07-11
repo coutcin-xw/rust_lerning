@@ -1,4 +1,4 @@
-# 第 12 章：并发编程
+# 第 13 章：并发编程
 
 ## 学习目标
 
@@ -457,4 +457,4 @@ let results: Vec<_> = result_rx.iter().collect();
 
 ---
 
-← [第 11 章：迭代器](./11-iterators.md) | [返回目录](./README.md) | → [第 13 章：智能指针](./13-smart-pointers.md)
+← [第 12 章：迭代器](./12-iterators.md) | [返回目录](./README.md) | → [第 14 章：智能指针](./14-smart-pointers.md)

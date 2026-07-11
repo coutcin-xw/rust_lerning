@@ -61,6 +61,8 @@ libc = "0.2"
 
 ### Feature 标志
 
+> 📘 Feature flags 的详细讲解见 [第 17 章：Cargo 进阶](./17-cargo-advanced.md)。以下为速查。
+
 ```toml
 [features]
 default = ["std"]
@@ -181,4 +183,4 @@ steps:
 
 ---
 
-← [第 20 章：unsafe Rust 与 FFI](./20-unsafe-ffi.md) | [返回目录](./README.md) | → [附录 B：学习资源](./appendix-b-resources.md)
+← [第 22 章：unsafe Rust 与 FFI](./22-unsafe-ffi.md) | [返回目录](./README.md) | → [附录 B：学习资源](./appendix-b-resources.md)

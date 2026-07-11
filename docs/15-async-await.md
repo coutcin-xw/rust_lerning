@@ -1,4 +1,4 @@
-# 第 14 章：异步编程
+# 第 15 章：异步编程
 
 ## 学习目标
 
@@ -163,24 +163,45 @@ let result = handle.await.unwrap();
 > 📘 *`async fn` in traits 自 Rust 1.75 起稳定（跨 Edition）。在 Rust 2024 Edition 中，其 RPIT 行为与普通 `async fn` 对齐。*
 
 ```rust
-trait Database {
-    async fn query(&self, sql: &str) -> Result<Vec<Row>, DbError>;
-    async fn execute(&self, sql: &str) -> Result<u64, DbError>;
+use std::collections::HashMap;
+
+trait Cache {
+    async fn get(&self, key: &str) -> Option<String>;
+    async fn set(&mut self, key: String, value: String);
 }
 
-struct PostgresDb { /* ... */ }
+struct MemCache {
+    store: HashMap<String, String>,
+}
 
-impl Database for PostgresDb {
-    async fn query(&self, sql: &str) -> Result<Vec<Row>, DbError> {
-        // 异步数据库查询
-        todo!()
+impl MemCache {
+    fn new() -> Self {
+        MemCache { store: HashMap::new() }
+    }
+}
+
+impl Cache for MemCache {
+    async fn get(&self, key: &str) -> Option<String> {
+        // 模拟异步 I/O（如从 Redis 读取）
+        self.store.get(key).cloned()
     }
 
-    async fn execute(&self, sql: &str) -> Result<u64, DbError> {
-        todo!()
+    async fn set(&mut self, key: String, value: String) {
+        self.store.insert(key, value);
     }
+}
+
+#[tokio::main]
+async fn main() {
+    let mut cache = MemCache::new();
+    cache.set("user:1".into(), "Alice".into()).await;
+    let user = cache.get("user:1").await;
+    println!("{:?}", user);  // Some("Alice")
 }
 ```
+
+> 💡 在 2021 Edition 中，async fn in traits 需要 `#[async_trait]` 宏或 `Box<dyn Future>`。2024 Edition 移除了这个限制。
+
 
 ## 异步错误处理
 
@@ -208,6 +229,142 @@ async fn fetch_and_process(url: &str) -> Result<ProcessedData, Error> {
 | 嵌入式实时系统 | ❌ | ✅ |
 
 > 💡 异步不是"更快"，而是能**更高效地处理大量并发 I/O**。单个异步任务并不比同步快——优势在于任务间切换无需线程上下文切换。
+
+## Stream — 异步迭代器
+
+`Stream` 是异步版本的 `Iterator`——每次 `next()` 返回一个 `Future<Output = Option<T>>`：
+
+```toml
+[dependencies]
+tokio-stream = "0.1"
+futures = "0.3"
+```
+
+```rust
+use futures::stream::StreamExt;
+use tokio_stream::StreamExt as _;
+
+// 从迭代器创建 Stream
+let stream = tokio_stream::iter(vec![1, 2, 3]);
+
+// 逐个消费
+tokio::pin!(stream);
+while let Some(val) = stream.next().await {
+    println!("收到: {}", val);
+}
+
+// 收集结果
+let results: Vec<i32> = stream.collect().await;
+
+// 常见操作（需 futures crate）
+// stream.filter(|x| ...)       // 过滤
+// stream.map(|x| ...)          // 转换
+// stream.take(5)               // 取前 N 个
+// stream.buffer_unordered(10)  // 最多 10 个并发处理
+```
+
+**创建自定义 Stream：**
+```rust
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::time::Duration;
+use tokio_stream::Stream;
+
+struct Interval {
+    count: u64,
+    interval: tokio::time::Interval,
+}
+
+impl Stream for Interval {
+    type Item = u64;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<u64>> {
+        if self.count == 0 {
+            return Poll::Ready(None);
+        }
+        match self.interval.poll_tick(cx) {
+            Poll::Ready(_) => {
+                self.count -= 1;
+                Poll::Ready(Some(self.count))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+```
+
+## tokio 通道 — 异步任务间通信
+
+`tokio::sync` 提供了三种常用通道，对应不同的通信模式：
+
+### mpsc — 多生产者单消费者
+
+```rust
+use tokio::sync::mpsc;
+
+#[tokio::main]
+async fn main() {
+    let (tx, mut rx) = mpsc::channel(32);  // 缓冲 32 条消息
+
+    // 多个生产者
+    for i in 0..5 {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            tx.send(format!("msg {}", i)).await.unwrap();
+        });
+    }
+    drop(tx);  // 释放最后一个 sender，channel 关闭
+
+    // 消费者
+    while let Some(msg) = rx.recv().await {
+        println!("收到: {}", msg);
+    }
+}
+```
+
+### broadcast — 广播，多消费者同时接收
+
+```rust
+use tokio::sync::broadcast;
+
+let (tx, mut rx1) = broadcast::channel(16);
+let mut rx2 = tx.subscribe();
+
+tokio::spawn(async move {
+    tx.send("通知").unwrap();
+});
+
+// 两个接收者都收到同一个消息
+let msg1 = rx1.recv().await.unwrap();
+let msg2 = rx2.recv().await.unwrap();
+assert_eq!(msg1, msg2);  // 两个都是 "通知"
+```
+
+### watch — 单生产者，只保留最新值
+
+```rust
+use tokio::sync::watch;
+
+let (tx, mut rx) = watch::channel(0);
+
+tokio::spawn(async move {
+    tx.send(1).unwrap();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    tx.send(2).unwrap();
+});
+
+// 如果接收端处理慢，中间的值可能被跳过
+rx.changed().await.unwrap();   // 收到 1 或 2（取决于时序）
+println!("值: {}", *rx.borrow());  // 总是最新值
+```
+
+**选型指南：**
+
+| 通道 | 消费者数 | 语义 | 典型场景 |
+|------|---------|------|---------|
+| `mpsc` | 1 | 每个消息只处理一次 | 任务队列、工作分发 |
+| `broadcast` | N | 每个消费者都收到每个消息 | 事件通知、配置更新 |
+| `watch` | N | 只取最新值，旧值可能丢失 | 配置热更新、状态同步 |
 
 ## Pin / Unpin — 自引用类型的内存保证
 
@@ -272,4 +429,4 @@ use std::task::{Context, Poll};
 
 ---
 
-← [第 13 章：智能指针](./13-smart-pointers.md) | [返回目录](./README.md) | → [第 15 章：模块系统](./15-modules.md)
+← [第 14 章：智能指针](./14-smart-pointers.md) | [返回目录](./README.md) | → [第 16 章：模块系统](./16-modules.md)
