@@ -135,11 +135,70 @@ fn announce2<'a, T: Display + 'a>(x: &'a str, info: T) -> &'a str {
 }
 ```
 
+### trait 定义带生命周期 + where Self
+
+`Self` 是 trait 内部表示"实现了这个 trait 的那个类型"的特殊标识——它不是泛型参数，但行为类似：
+
+```rust
+// trait 自身带生命周期参数
+pub trait Deserialize<'de>: Sized {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>;
+}
+
+// 等价写法——把 Self: Sized 移到 where 子句
+pub trait Deserialize<'de>
+where
+    Self: Sized,     // Self = "实现这个 trait 的类型"
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>;
+}
+```
+
+**`Self` 在这里是什么？**
+
+```
+当你写:  impl<'de> Deserialize<'de> for User
+编译器:  在这个 impl 块中, Self = User
+         where Self: Sized  → where User: Sized ✓
+
+当你写:  impl<'de> Deserialize<'de> for str
+编译器:  在这个 impl 块中, Self = str
+         where Self: Sized  → where str: Sized ✗ (str 是 DST，不满足 Sized)
+```
+
+> 💡 `Self: Sized` 是 trait 中最常见的 where 约束——它说"只有 Sized 类型才能实现这个 trait"（排除 `str`、`dyn Trait` 等动态大小类型）。如果去掉这个约束，trait 就可以为 `str` 等类型实现，但方法签名中需要处理 `?Sized`。
+
+### impl 块中的生命周期 + where Self
+
+```rust
+struct MyParser<'a, T> {
+    data: &'a [T],
+    pos: usize,
+}
+
+impl<'a, T> MyParser<'a, T>
+where
+    T: PartialEq + 'a,     // T 可比较 + 包含的引用 ≥ 'a
+{
+    fn next(&mut self) -> Option<&'a T> {
+        if self.pos < self.data.len() {
+            let r = &self.data[self.pos];
+            self.pos += 1;
+            Some(r)
+        } else {
+            None
+        }
+    }
+}
+```
+
 **组合速查：**
 
 | 写法 | 含义 | 常用场景 |
 |------|------|---------|
 | `<'a, T>` | 生命周期 `'a` + 泛型 `T` | 泛型函数返回引用 |
+| `trait Trait<'a>` | trait 自身带生命周期参数 | `Deserialize<'de>`、`Borrow<'a>` |
+| `where Self: Sized` | 限制实现者类型大小已知 | trait 定义中排除 DST |
 | `T: 'a` | T 包含的引用都 ≥ `'a` | 保证 T 不包含悬垂引用 |
 | `T: Trait + 'a` | T 实现 Trait 且引用 ≥ `'a` | 泛型 + trait + 生命周期组合 |
 | `'a: 'b` | `'a` 至少和 `'b` 一样长 | 多生命周期约束 |
