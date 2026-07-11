@@ -135,38 +135,49 @@ fn announce2<'a, T: Display + 'a>(x: &'a str, info: T) -> &'a str {
 }
 ```
 
-### trait 定义带生命周期 + where Self
+### trait 定义带生命周期参数
 
-`Self` 是 trait 内部表示"实现了这个 trait 的那个类型"的特殊标识——它不是泛型参数，但行为类似：
+trait 自身可以携带生命周期参数。最常见的例子是 serde 的 `Deserialize<'de>`：
 
 ```rust
-// trait 自身带生命周期参数
 pub trait Deserialize<'de>: Sized {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>;
 }
+```
 
-// 等价写法——把 Self: Sized 移到 where 子句
-pub trait Deserialize<'de>
-where
-    Self: Sized,     // Self = "实现这个 trait 的类型"
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>;
+**`'de` 在这里的含义：**
+
+```
+'de 是"反序列化的源数据"的存活期。
+当你 impl Deserialize<'de> for MyType 时，
+'de 约束了 MyType 从源数据中借用的引用的寿命。
+
+例如：
+impl<'de> Deserialize<'de> for &'de str {
+    // 反序列化的结果 &str 直接借用源数据——所以 'de 必须匹配
+    // &str 不能比源数据活得久
+}
+
+impl<'de> Deserialize<'de> for i32 {
+    // i32 不借用源数据——但 'de 仍然在签名中
+    // 这时用 for<'de> 解耦（见三：HRTB）
 }
 ```
 
-**`Self` 在这里是什么？**
+**`'de` 声明在 trait 上 vs 声明在 impl 上：**
 
+```rust
+// trait 上声明：所有实现者都要处理这个生命周期
+pub trait Deserialize<'de> { ... }
+
+// impl 时传入具体关系：
+impl<'de> Deserialize<'de> for MyType { ... }     // MyType 借用 'de
+impl Deserialize<'static> for OwnedType { ... }   // OwnedType 不借用，固定 'static
 ```
-当你写:  impl<'de> Deserialize<'de> for User
-编译器:  在这个 impl 块中, Self = User
-         where Self: Sized  → where User: Sized ✓
 
-当你写:  impl<'de> Deserialize<'de> for str
-编译器:  在这个 impl 块中, Self = str
-         where Self: Sized  → where str: Sized ✗ (str 是 DST，不满足 Sized)
-```
+> 💡 trait 上的生命周期参数本质是"trait 的一个泛型维度"——和 `trait Foo<T>` 一样，`trait Bar<'a>` 允许 trait 的行为依赖于一个生命周期。`Sized` 约束（`trait Deserialize<'de>: Sized`）的含义见第 8 章的 Supertrait 小节。
 
-> 💡 `Self: Sized` 是 trait 中最常见的 where 约束——它说"只有 Sized 类型才能实现这个 trait"（排除 `str`、`dyn Trait` 等动态大小类型）。如果去掉这个约束，trait 就可以为 `str` 等类型实现，但方法签名中需要处理 `?Sized`。
+### impl 块中生命周期 + where（略）
 
 ### impl 块中的生命周期 + where Self
 

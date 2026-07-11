@@ -195,7 +195,7 @@ pub trait Deserialize<'de>: Sized {
 
 | 部分 | 含义 |
 |------|------|
-| `Deserialize<'de>` | trait 自身带一个生命周期参数 `'de` |
+| `Deserialize<'de>` | trait 自身带一个生命周期参数 `'de`（`'de` 的含义见第 10 章） |
 | `: Sized` | 只有编译期大小已知的类型才能实现（排除 `str`、`dyn Trait` 等 DST） |
 | `Self` | 在 `impl Deserialize<'de> for MyType` 中 `Self = MyType` |
 | `-> Result<Self, D::Error>` | 返回"实现了该 trait 的那个类型"——静态分发，不是动态的 |
