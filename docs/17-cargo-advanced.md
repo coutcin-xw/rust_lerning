@@ -461,6 +461,31 @@ rust-version.workspace = true
 serde = { workspace = true }    # 继承共享的 serde 声明
 ```
 
+**依赖继承的两种写法：**
+
+```toml
+# 写法 1：brace 形式 — 可以同时覆盖其他属性
+serde = { workspace = true, features = ["extra"] }
+
+# 写法 2：点号简写 — 纯继承，不加覆盖
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+# 两者等价。点号简写对批量继承非常方便：
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+# 类似 npm 的批量导入，清爽集中管理
+```
+
+> 💡 点号简写对应大多数 TOML 键：在 `[dependencies]` / `[dev-dependencies]` / `[build-dependencies]` 中，`dep.workspace = true` 等价于 `dep = { workspace = true }`。
+
 **可继承的属性：** `version`、`edition`、`license`、`repository`、`rust-version`、`authors`、`description`、`homepage`、`documentation`、`keywords`、`categories`、`publish`、`exclude`、`include`。
 
 ### 成员间依赖与 feature 传递
