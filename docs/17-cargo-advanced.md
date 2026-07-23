@@ -429,16 +429,135 @@ cargo test -p core               # 只测试 core
 cargo run -p cli -- --verbose    # 运行 cli，-- 分隔传递参数
 ```
 
-### 一步步创建 Workspace
+### workspace 继承 — 可共享的属性
+
+根 `Cargo.toml` 的 `[workspace.package]` 可以定义公用的包元数据，子 crate 通过 `key.workspace = true` 继承：
+
+```toml
+# 根 Cargo.toml
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/user/my_project"
+rust-version = "1.85"
+authors = ["团队 <team@example.com>"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+```
+
+```toml
+# core/Cargo.toml — 继承所有共享属性
+[package]
+name = "core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }    # 继承共享的 serde 声明
+```
+
+**可继承的属性：** `version`、`edition`、`license`、`repository`、`rust-version`、`authors`、`description`、`homepage`、`documentation`、`keywords`、`categories`、`publish`、`exclude`、`include`。
+
+### 成员间依赖与 feature 传递
+
+workspace 成员可以互相依赖，并通过 feature 控制内部行为：
+
+```
+my_project/
+├── core/                   # 核心库：定义了 add/init 基础功能
+│   └── src/lib.rs
+├── cli/                    # CLI 工具：依赖 core，使用 core 的公共 API
+│   └── src/main.rs
+└── web/                    # Web 服务：依赖 core，启用 core 的 "json" feature
+    └── src/main.rs
+```
+
+```toml
+# core/Cargo.toml — 提供可选功能
+[features]
+default = []
+json = ["dep:serde_json"]    # 开启 JSON 支持
+
+[dependencies]
+serde_json = { version = "1", optional = true }
+```
+
+```rust
+// core/src/lib.rs
+pub fn init() { println!("core 初始化"); }
+
+#[cfg(feature = "json")]
+pub fn to_json<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value).unwrap()
+}
+```
+
+```toml
+# web/Cargo.toml — 依赖 core，启用 json feature
+[dependencies]
+core = { path = "../core", features = ["json"] }
+tokio = { workspace = true }
+```
+
+```toml
+# cli/Cargo.toml — 依赖 core，不启用 json feature
+[dependencies]
+core = { path = "../core" }   # 默认不使用 json
+clap = "4"
+```
+
+```rust
+// cli/src/main.rs — 使用 core 的公共 API
+fn main() {
+    core::init();
+    println!("CLI 工具已启动");
+}
+```
+
+```rust
+// web/src/main.rs — 使用 core + json 功能
+#[tokio::main]
+async fn main() {
+    core::init();
+    let data = vec![1, 2, 3];
+    println!("JSON: {}", core::to_json(&data));  // ✅ web 启用了 json feature
+}
+```
 
 ```bash
-mkdir my_project && cd my_project
-# 创建 workspace 根 Cargo.toml（见上文）
-cargo new core --lib
-cargo new cli
-# 在 cli/Cargo.toml 的 dependencies 中加上 core = { path = "../core" }
-cargo build --workspace          # 一切就绪
+cargo run -p cli                         # 只编译 core + cli（不编译 web）
+cargo run -p web                         # 编译 core + web（core 启用 json）
+cargo build --workspace                  # 全部编译
 ```
+
+### 排除成员 + patches
+
+```toml
+# 根 Cargo.toml
+[workspace]
+members = ["core", "cli", "web"]
+exclude = ["experiments", "deprecated"]  # 不参与 workspace 的子目录
+
+# 统一替换某个依赖（调试、fix 紧急 bug 时用）
+[patch.crates-io]
+serde = { git = "https://github.com/serde-rs/serde", branch = "fix-bug" }
+```
+
+### workspace 常用命令速查
+
+| 命令 | 作用 |
+|------|------|
+| `cargo build --workspace` | 编译所有成员 |
+| `cargo test -p <name>` | 只测试指定 crate |
+| `cargo run -p <name>` | 运行指定 bin crate |
+| `cargo check -p <name>` | 只检查指定 crate（快） |
+| `cargo doc --workspace --no-deps` | 为所有成员生成文档 |
+| `cargo clippy --workspace` | 对所有成员运行 clippy |
 
 ## 练习
 
